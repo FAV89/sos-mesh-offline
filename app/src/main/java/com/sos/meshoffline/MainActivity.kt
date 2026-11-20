@@ -94,6 +94,14 @@ class MainActivity : AppCompatActivity() {
 
         layout.addView(statusText)
         layout.addView(map, mapParams)
+        val attribution = TextView(this).apply {
+    text = "© OpenStreetMap contributors"
+    setTextColor(Color.WHITE)
+    textSize = 11f
+    gravity = Gravity.CENTER
+    setPadding(8, 4, 8, 4)
+}
+layout.addView(attribution)
         layout.addView(sosButton)
 
         setContentView(layout)
