@@ -18,35 +18,10 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Generate Clean AndroidManifest
+    - name: Decode Clean AndroidManifest
       run: |
         mkdir -p app/src/main
-        python3 -c '
-        c = "android:"
-        xml = f"""<?xml version="1.0" encoding="utf-8"?>
-        <manifest xmlns:{c[:-1]}="http://android.com">
-            <uses-permission {c}name="android.permission.ACCESS_FINE_LOCATION" />
-            <uses-permission {c}name="android.permission.ACCESS_COARSE_LOCATION" />
-            <uses-permission {c}name="android.permission.BLUETOOTH" />
-            <uses-permission {c}name="android.permission.BLUETOOTH_ADMIN" />
-            <uses-permission {c}name="android.permission.BLUETOOTH_ADVERTISE" />
-            <uses-permission {c}name="android.permission.BLUETOOTH_SCAN" {c}usesPermissionFlags="neverForLocation" />
-            <uses-permission {c}name="android.permission.BLUETOOTH_CONNECT" />
-            <uses-permission {c}name="android.permission.INTERNET" />
-            <uses-permission {c}name="android.permission.ACCESS_NETWORK_STATE" />
-            <uses-feature {c}name="android.hardware.bluetooth_le" {c}required="true" />
-            <uses-feature {c}name="android.hardware.location.gps" {c}required="true" />
-            <application {c}allowBackup="true" {c}label="SOS Mesh Offline" {c}supportsRtl="true" {c}theme="@style/Theme.AppCompat.Light.NoActionBar">
-                <activity {c}name=".MainActivity" {c}exported="true" {c}screenOrientation="portrait">
-                    <intent-filter>
-                        <action {c}name="android.intent.action.MAIN" />
-                        <category {c}name="android.intent.category.LAUNCHER" />
-                    </intent-filter>
-                </activity>
-            </application>
-        </manifest>"""
-        open("app/src/main/AndroidManifest.xml", "w").write(xml)
-        '
+        echo "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPG1hbmlmZXN0IHhtbG5zOmFuZHJvaWQ9Imh0dHA6Ly9zY2hlbWFzLmFuZHJvaWQuY29tL2Fway9yZXMvYW5kcm9pZCI+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLkFDQ0VTU19GSU5FX0xPQ0FUSU9OIiAvPgogICAgPHVzZXMtcGVybWlzc2lvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQucGVybWlzc2lvbi5BQ0NFU1NfQ09BUlNFX0xPQ0FUSU9OIiAvPgogICAgPHVzZXMtcGVybWlzc2lvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQucGVybWlzc2lvbi5CTFVEVE9PVEgiIC8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLkJMVUVUT09USF9BRE1JTiIgLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uQkxVRVRPT1RIX0FEVkVSVElTRSIgLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uQkxVRVRPT1RIX1NDQU4iIGFuZHJvaWQ6dXNlc1Blcm1pc3Npb25GbGFncz0ibmV2ZXJGb3JMb2NhdGlvbiIgLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uQkxVRVRPT1RIX0NPTk5FQ1QiIC8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLklOVEVSTkVUIiAvPgogICAgPHVzZXMtcGVybWlzc2lvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQucGVybWlzc2lvbi5BQ0NFU1NfTkVUV09SS19TVEFURSIgLz4KICAgIDx1c2VzLWZlYXR1cmUgYW5kcm9pZDpuYW1lPSJhbmRyb2lkLmhhcmR3YXJlLmJsdWV0b290aF9sZSIgYW5kcm9pZDpyZXF1aXJlZD0idHJ1ZSIgLz4KICAgIDx1c2VzLWZlYXR1cmUgYW5kcm9pZDpuYW1lPSJhbmRyb2lkLmhhcmR3YXJlLmxvY2F0aW9uLmdwcyIgYW5kcm9pZDpyZXF1aXJlZD0idHJ1ZSIgLz4KICAgIDxhcHBsaWNhdGlvbiBhbmRyb2lkOmFsbG93QmFja3VwPSJ0cnVlIiBhbmRyb2lkOmxhYmVsPSJTT1MgTWVzaCBPZmZsaW5lIiBhbmRyb2lkOnN1cHBvcnRzUnRsPSJ0cnVlIiBhbmRyb2lkOnRoZW1lPSJAc3R5bGUvVGhlbWUuQXBwQ29tcGF0LkxpZ2h0Lk5vQWN0aW9uQmFyIj4KICAgICAgICA8YWN0aXZpdHkgYW5kcm9pZDpuYW1lPSIuTWFpbkFjdGl2aXR5IiBhbmRyb2lkOmV4cG9ydGVkPSJ0cnVlIiBhbmRyb2lkOnNjcmVlbk9yaWVudGF0aW9uPSJwb3J0cmFpdCI+CiAgICAgICAgICAgIDxpbnRlbnQtZmlsdGVyPgogICAgICAgICAgICAgICAgPGFjdGlvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQuaW50ZW50LmFjdGlvbi5NQUlOIiAvPgogICAgICAgICAgICAgICAgPG categoryIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5pbnRlbnQuY2F0ZWdvcnkuTEFVTkNIRVIiIC8+CiAgICAgICAgICAgIDwvaW50ZW50LWZpbHRlcj4KICAgICAgICA8L2FjdGl2aXR5PgogICAgPC9hcHBsaWNhdGlvbj4KPC9tYW5pZmVzdD4=" | base64 -d > app/src/main/AndroidManifest.xml
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
