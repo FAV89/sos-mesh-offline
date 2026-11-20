@@ -18,10 +18,31 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Decode Clean AndroidManifest
+    - name: Generate Clean AndroidManifest
       run: |
         mkdir -p app/src/main
-        echo "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPG1hbmlmZXN0IHhtbG5zOmFuZHJvaWQ9Imh0dHA6Ly9zY2hlbWFzLmFuZHJvaWQuY29tL2Fway9yZXMvYW5kcm9pZCI+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLkFDQ0VTU19GSU5FX0xPQ0FUSU9OIiAvPgogICAgPHVzZXMtcGVybWlzc2lvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQucGVybWlzc2lvbi5BQ0NFU1NfQ09BUlNFX0xPQ0FUSU9OIiAvPgogICAgPHVzZXMtcGVybWlzc2lvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQucGVybWlzc2lvbi5CTFVEVE9PVEgiIC8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLkJMVUVUT09USF9BRE1JTiIgLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uQkxVRVRPT1RIX0FEVkVSVElTRSIgLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uQkxVRVRPT1RIX1NDQU4iIGFuZHJvaWQ6dXNlc1Blcm1pc3Npb25GbGFncz0ibmV2ZXJGb3JMb2NhdGlvbiIgLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uQkxVRVRPT1RIX0NPTk5FQ1QiIC8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLklOVEVSTkVUIiAvPgogICAgPHVzZXMtcGVybWlzc2lvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQucGVybWlzc2lvbi5BQ0NFU1NfTkVUV09SS19TVEFURSIgLz4KICAgIDx1c2VzLWZlYXR1cmUgYW5kcm9pZDpuYW1lPSJhbmRyb2lkLmhhcmR3YXJlLmJsdWV0b290aF9sZSIgYW5kcm9pZDpyZXF1aXJlZD0idHJ1ZSIgLz4KICAgIDx1c2VzLWZlYXR1cmUgYW5kcm9pZDpuYW1lPSJhbmRyb2lkLmhhcmR3YXJlLmxvY2F0aW9uLmdwcyIgYW5kcm9pZDpyZXF1aXJlZD0idHJ1ZSIgLz4KICAgIDxhcHBsaWNhdGlvbiBhbmRyb2lkOmFsbG93QmFja3VwPSJ0cnVlIiBhbmRyb2lkOmxhYmVsPSJTT1MgTWVzaCBPZmZsaW5lIiBhbmRyb2lkOnN1cHBvcnRzUnRsPSJ0cnVlIiBhbmRyb2lkOnRoZW1lPSJAc3R5bGUvVGhlbWUuQXBwQ29tcGF0LkxpZ2h0Lk5vQWN0aW9uQmFyIj4KICAgICAgICA8YWN0aXZpdHkgYW5kcm9pZDpuYW1lPSIuTWFpbkFjdGl2aXR5IiBhbmRyb2lkOmV4cG9ydGVkPSJ0cnVlIiBhbmRyb2lkOnNjcmVlbk9yaWVudGF0aW9uPSJwb3J0cmFpdCI+CiAgICAgICAgICAgIDxpbnRlbnQtZmlsdGVyPgogICAgICAgICAgICAgICAgPGFjdGlvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQuaW50ZW50LmFjdGlvbi5NQUlOIiAvPgogICAgICAgICAgICAgICAgPG categoryIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5pbnRlbnQuY2F0ZWdvcnkuTEFVTkNIRVIiIC8+CiAgICAgICAgICAgIDwvaW50ZW50LWZpbHRlcj4KICAgICAgICA8L2FjdGl2aXR5PgogICAgPC9hcHBsaWNhdGlvbj4KPC9tYW5pZmVzdD4=" | base64 -d > app/src/main/AndroidManifest.xml
+        printf '<?xml version="1.0" encoding="utf-8"?>\n' > app/src/main/AndroidManifest.xml
+        printf '<manifest xmlns:android="http://android.com">\n' >> app/src/main/AndroidManifest.xml
+        printf '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n' >> app/src/main/AndroidManifest.xml
+        printf '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n' >> app/src/main/AndroidManifest.xml
+        printf '    <uses-permission android:name="android.permission.BLUETOOTH" />\n' >> app/src/main/AndroidManifest.xml
+        printf '    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />\n' >> app/src/main/AndroidManifest.xml
+        printf '    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />\n' >> app/src/main/AndroidManifest.xml
+        printf '    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />\n' >> app/src/main/AndroidManifest.xml
+        printf '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n' >> app/src/main/AndroidManifest.xml
+        printf '    <uses-permission android:name="android.permission.INTERNET" />\n' >> app/src/main/AndroidManifest.xml
+        printf '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n' >> app/src/main/AndroidManifest.xml
+        printf '    <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />\n' >> app/src/main/AndroidManifest.xml
+        printf '    <uses-feature android:name="android.hardware.location.gps" android:required="true" />\n' >> app/src/main/AndroidManifest.xml
+        printf '    <application android:allowBackup="true" android:label="SOS Mesh Offline" android:supportsRtl="true" android:theme="@style/Theme.AppCompat.Light.NoActionBar">\n' >> app/src/main/AndroidManifest.xml
+        printf '        <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="portrait">\n' >> app/src/main/AndroidManifest.xml
+        printf '            <intent-filter>\n' >> app/src/main/AndroidManifest.xml
+        printf '                <action android:name="android.intent.action.MAIN" />\n' >> app/src/main/AndroidManifest.xml
+        printf '                <category android:name="android.intent.category.LAUNCHER" />\n' >> app/src/main/AndroidManifest.xml
+        printf '            </intent-filter>\n' >> app/src/main/AndroidManifest.xml
+        printf '        </activity>\n' >> app/src/main/AndroidManifest.xml
+        printf '    </application>\n' >> app/src/main/AndroidManifest.xml
+        printf '</manifest>\n' >> app/src/main/AndroidManifest.xml
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
