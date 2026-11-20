@@ -51,7 +51,7 @@ class MainActivity : AppCompatActivity() {
 
         // Configurare OpenStreetMap (fara Google)
         Configuration.getInstance().load(this, PreferenceManager.getDefaultSharedPreferences(this))
-        Configuration.getInstance().userAgentValue = "SOSMeshOffline/1.0 (contact: emailul-tau@example.com)"
+        Configuration.getInstance().userAgentValue = "SOSMeshOffline/1.0 (contact: vargaferencattila@gmail.com)"
 
         setupUI()
         checkPermissions()
