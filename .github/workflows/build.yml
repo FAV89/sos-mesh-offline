@@ -22,7 +22,7 @@ jobs:
       run: |
         mkdir -p app/src/main
         printf '<?xml version="1.0" encoding="utf-8"?>\n' > app/src/main/AndroidManifest.xml
-        printf '<manifest xmlns:android="http://android.com">\n' >> app/src/main/AndroidManifest.xml
+        printf '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n' >> app/src/main/AndroidManifest.xml
         printf '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n' >> app/src/main/AndroidManifest.xml
         printf '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n' >> app/src/main/AndroidManifest.xml
         printf '    <uses-permission android:name="android.permission.BLUETOOTH" />\n' >> app/src/main/AndroidManifest.xml
