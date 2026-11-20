@@ -18,6 +18,36 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
+    - name: Generate Clean AndroidManifest
+      run: |
+        mkdir -p app/src/main
+        python3 -c '
+        c = "android:"
+        xml = f"""<?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:{c[:-1]}="http://android.com">
+            <uses-permission {c}name="android.permission.ACCESS_FINE_LOCATION" />
+            <uses-permission {c}name="android.permission.ACCESS_COARSE_LOCATION" />
+            <uses-permission {c}name="android.permission.BLUETOOTH" />
+            <uses-permission {c}name="android.permission.BLUETOOTH_ADMIN" />
+            <uses-permission {c}name="android.permission.BLUETOOTH_ADVERTISE" />
+            <uses-permission {c}name="android.permission.BLUETOOTH_SCAN" {c}usesPermissionFlags="neverForLocation" />
+            <uses-permission {c}name="android.permission.BLUETOOTH_CONNECT" />
+            <uses-permission {c}name="android.permission.INTERNET" />
+            <uses-permission {c}name="android.permission.ACCESS_NETWORK_STATE" />
+            <uses-feature {c}name="android.hardware.bluetooth_le" {c}required="true" />
+            <uses-feature {c}name="android.hardware.location.gps" {c}required="true" />
+            <application {c}allowBackup="true" {c}label="SOS Mesh Offline" {c}supportsRtl="true" {c}theme="@style/Theme.AppCompat.Light.NoActionBar">
+                <activity {c}name=".MainActivity" {c}exported="true" {c}screenOrientation="portrait">
+                    <intent-filter>
+                        <action {c}name="android.intent.action.MAIN" />
+                        <category {c}name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>"""
+        open("app/src/main/AndroidManifest.xml", "w").write(xml)
+        '
+
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
 
