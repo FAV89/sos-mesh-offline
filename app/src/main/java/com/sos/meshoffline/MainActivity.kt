@@ -24,6 +24,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -109,19 +110,24 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
         }
 
-        // CARTO Voyager (date OpenStreetMap)
-        val cartoTileSource = XYTileSource(
-            "CartoVoyager", 0, 19, 256, ".png",
-            arrayOf(
-                "https://a.basemaps.cartocdn.com/rastertiles/voyager/",
-                "https://b.basemaps.cartocdn.com/rastertiles/voyager/",
-                "https://c.basemaps.cartocdn.com/rastertiles/voyager/"
-            ),
-            "© OpenStreetMap contributors, © CARTO"
-        )
+        // Hartă: dacă ai cheie CARTO (gratuită, carto.com/basemaps/apikey) o pui aici.
+        // Dacă rămâne goală, se folosesc tile-urile standard OpenStreetMap (nu necesită cheie).
+        val cartoKey = "cb1_5dkf_1_57d40daf6b5b373875d498da"
+        val tileSource = if (cartoKey.isNotBlank()) {
+            object : XYTileSource(
+                "CartoVoyagerKey", 0, 19, 256, ".png",
+                arrayOf("https://basemaps.cartocdn.com/rastertiles/voyager/"),
+                "© OpenStreetMap contributors, © CARTO"
+            ) {
+                override fun getTileURLString(pMapTileIndex: Long): String =
+                    super.getTileURLString(pMapTileIndex) + "?key=" + cartoKey
+            }
+        } else {
+            TileSourceFactory.MAPNIK
+        }
 
         map = MapView(this).apply {
-            setTileSource(cartoTileSource)
+            setTileSource(tileSource)
             setMultiTouchControls(true)
             controller.setZoom(15.0)
             controller.setCenter(GeoPoint(47.6567, 23.5850))
