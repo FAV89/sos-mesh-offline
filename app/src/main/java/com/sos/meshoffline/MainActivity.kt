@@ -11,17 +11,25 @@ import android.graphics.Color
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
-import android.os.*
-import android.preference.PreferenceManager
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
-import android.widget.*
+import android.view.WindowManager
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.CopyrightOverlay
 import org.osmdroid.views.overlay.Marker
+import java.io.File
 import java.nio.ByteBuffer
 import kotlin.random.Random
 
@@ -35,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private var bleAdvertiser: BluetoothLeAdvertiser? = null
     private var bleScanner: BluetoothLeScanner? = null
     private var locationManager: LocationManager? = null
+    private var hardwareStarted = false
 
     private var myLat = 0.0
     private var myLon = 0.0
@@ -43,25 +52,44 @@ class MainActivity : AppCompatActivity() {
     private var myMarker: Marker? = null
 
     private val MANUFACTURER_ID = 0xFFFF
-    private val seenPackets = mutableSetOf<String>()
+    private val MAX_HOPS = 10
     private val handler = Handler(Looper.getMainLooper())
 
-    // Re-emite semnalul SOS la fiecare 10 secunde cat timp alarma este activa
-    private val sosLoopRunnable = object : Runnable {
+    // Pachetele pe care le retransmitem (SOS-urile altora). Cheia = sosId.
+    private class Packet(val id: Short, var hops: Int, val lat: Float, val lon: Float)
+    private val relayQueue = LinkedHashMap<Short, Packet>()
+    private val alertMarkers = HashMap<Short, Marker>()
+    private var rotateIndex = 0
+
+    // Buclă unică de emisie: o dată la 3 secunde alege următorul pachet (al meu + cele relayate)
+    private val broadcastLoop = object : Runnable {
         override fun run() {
+            val toSend = ArrayList<Packet>()
             if (isSosActive && myLat != 0.0 && myLon != 0.0) {
-                broadcastSosPacket(mySosId, 0, myLat.toFloat(), myLon.toFloat())
-                handler.postDelayed(this, 10000)
+                toSend.add(Packet(mySosId, 0, myLat.toFloat(), myLon.toFloat()))
             }
+            toSend.addAll(relayQueue.values)
+            if (toSend.isNotEmpty()) {
+                rotateIndex = (rotateIndex + 1) % toSend.size
+                val p = toSend[rotateIndex]
+                advertise(p.id, p.hops, p.lat, p.lon)
+            } else {
+                stopAdvertising()
+            }
+            handler.postDelayed(this, 3000)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        Configuration.getInstance().load(this, prefs)
-        Configuration.getInstance().userAgentValue = "SOSMeshOfflineApp/1.0"
+        // User-Agent descriptiv + cache în stocarea privată a aplicației
+        val cfg = Configuration.getInstance()
+        cfg.userAgentValue = "com.sos.meshoffline/1.0 (SOS Mesh Offline; Android)"
+        cfg.osmdroidBasePath = File(filesDir, "osmdroid")
+        cfg.osmdroidTileCache = File(cfg.osmdroidBasePath, "tiles")
+
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         setupUI()
         checkPermissions()
@@ -74,20 +102,20 @@ class MainActivity : AppCompatActivity() {
         }
 
         statusText = TextView(this).apply {
-            text = "Initializare GPS si Bluetooth Mesh..."
+            text = "Inițializare GPS și Bluetooth Mesh..."
             setTextColor(Color.WHITE)
             textSize = 15f
             setPadding(24, 32, 24, 24)
             gravity = Gravity.CENTER
         }
 
+        // CARTO Voyager (date OpenStreetMap)
         val cartoTileSource = XYTileSource(
-            "CartoVoyager",
-            0, 19, 256, ".png",
+            "CartoVoyager", 0, 19, 256, ".png",
             arrayOf(
-                "https://cartocdn.com",
-                "https://cartocdn.com",
-                "https://cartocdn.com"
+                "https://a.basemaps.cartocdn.com/rastertiles/voyager/",
+                "https://b.basemaps.cartocdn.com/rastertiles/voyager/",
+                "https://c.basemaps.cartocdn.com/rastertiles/voyager/"
             ),
             "© OpenStreetMap contributors, © CARTO"
         )
@@ -97,6 +125,7 @@ class MainActivity : AppCompatActivity() {
             setMultiTouchControls(true)
             controller.setZoom(15.0)
             controller.setCenter(GeoPoint(47.6567, 23.5850))
+            overlays.add(CopyrightOverlay(this@MainActivity)) // atribuirea hărții
         }
 
         sosButton = Button(this).apply {
@@ -108,18 +137,13 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { toggleSos() }
         }
 
-        val mapParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
-        )
-
         layout.addView(statusText)
-        layout.addView(map, mapParams)
+        layout.addView(map, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         layout.addView(sosButton)
-
         setContentView(layout)
     }
 
-    private fun checkPermissions() {
+    private fun neededPermissions(): List<String> {
         val perms = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
@@ -128,15 +152,14 @@ class MainActivity : AppCompatActivity() {
             perms.add(Manifest.permission.BLUETOOTH_SCAN)
             perms.add(Manifest.permission.BLUETOOTH_ADVERTISE)
             perms.add(Manifest.permission.BLUETOOTH_CONNECT)
-        } else {
-            perms.add(Manifest.permission.BLUETOOTH)
-            perms.add(Manifest.permission.BLUETOOTH_ADMIN)
         }
+        return perms
+    }
 
-        val missing = perms.filter {
+    private fun checkPermissions() {
+        val missing = neededPermissions().filter {
             ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
-
         if (missing.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, missing.toTypedArray(), 101)
         } else {
@@ -146,11 +169,18 @@ class MainActivity : AppCompatActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        initHardware()
+        if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+            initHardware()
+        } else {
+            updateStatus("Permisiunile (locație + Bluetooth) sunt necesare pentru SOS.")
+        }
     }
 
     @SuppressLint("MissingPermission")
     private fun initHardware() {
+        if (hardwareStarted) return
+        hardwareStarted = true
+
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
         val locListener = object : LocationListener {
@@ -158,11 +188,14 @@ class MainActivity : AppCompatActivity() {
                 myLat = loc.latitude
                 myLon = loc.longitude
                 if (!isSosActive) {
-                    updateStatus("Pozitie fixa: %.5f, %.5f\nScanare Mesh activa...".format(myLat, myLon))
+                    updateStatus("Poziție fixă: %.5f, %.5f\nScanare Mesh activă...".format(myLat, myLon))
                 }
-                val myPoint = GeoPoint(myLat, myLon)
-                updateSelfMarker(myPoint)
+                updateSelfMarker(GeoPoint(myLat, myLon))
             }
+            @Deprecated("Deprecated in Java")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
         }
 
         try {
@@ -179,13 +212,14 @@ class MainActivity : AppCompatActivity() {
                 map.controller.animateTo(GeoPoint(lastLoc.latitude, lastLoc.longitude))
             }
         } catch (e: Exception) {
-            updateStatus("Eroare Locatie: Porneste GPS-ul din telefon!")
+            updateStatus("Eroare locație: pornește GPS-ul din telefon!")
         }
 
         val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         bluetoothAdapter = btManager.adapter
         if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) {
-            updateStatus("ATENTIE: Porneste Bluetooth-ul!")
+            updateStatus("ATENȚIE: pornește Bluetooth-ul!")
+            hardwareStarted = false
             return
         }
 
@@ -193,43 +227,40 @@ class MainActivity : AppCompatActivity() {
         bleScanner = bluetoothAdapter?.bluetoothLeScanner
 
         startMeshScanning()
+        handler.post(broadcastLoop)
     }
 
     private fun toggleSos() {
         if (myLat == 0.0 || myLon == 0.0) {
-            Toast.makeText(this, "Asteapta fixarea semnalului GPS!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Așteaptă fixarea semnalului GPS!", Toast.LENGTH_SHORT).show()
             return
         }
-
         isSosActive = !isSosActive
         if (isSosActive) {
             mySosId = Random.nextInt(1, 32000).toShort()
-            sosButton.text = "OPRESTE ALARMA SOS"
+            sosButton.text = "OPREȘTE ALARMA SOS"
             sosButton.setBackgroundColor(Color.parseColor("#388E3C"))
-            handler.post(sosLoopRunnable)
-            updateStatus("EMITERE SOS ACTIVA (#$mySosId)!\nSemnalul se propaga prin BT...")
+            updateStatus("EMITERE SOS ACTIVĂ (#$mySosId)!\nSemnalul se propagă prin Bluetooth...")
         } else {
             sosButton.text = "TRIMITE ALARMA SOS"
             sosButton.setBackgroundColor(Color.parseColor("#D32F2F"))
-            handler.removeCallbacks(sosLoopRunnable)
-            stopAdvertising()
-            updateStatus("Alarma oprita. Scanare Mesh activa...")
+            updateStatus("Alarma oprită. Scanare Mesh activă...")
         }
     }
 
     @SuppressLint("MissingPermission")
-    private fun broadcastSosPacket(sosId: Short, hops: Byte, lat: Float, lon: Float) {
+    private fun advertise(sosId: Short, hops: Int, lat: Float, lon: Float) {
         stopAdvertising()
 
         val buffer = ByteBuffer.allocate(11)
         buffer.putShort(sosId)
-        buffer.put(hops)
+        buffer.put(hops.toByte())
         buffer.putFloat(lat)
         buffer.putFloat(lon)
 
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-            ..setTxPowerLevel(3)
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
             .setConnectable(false)
             .build()
 
@@ -237,7 +268,9 @@ class MainActivity : AppCompatActivity() {
             .addManufacturerData(MANUFACTURER_ID, buffer.array())
             .build()
 
-        bleAdvertiser?.startAdvertising(settings, data, advertiseCallback)
+        try {
+            bleAdvertiser?.startAdvertising(settings, data, advertiseCallback)
+        } catch (_: Exception) {}
     }
 
     @SuppressLint("MissingPermission")
@@ -255,58 +288,80 @@ class MainActivity : AppCompatActivity() {
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
-        bleScanner?.startScan(null, settings, object : ScanCallback() {
+        // Filtru pe ID-ul nostru: Android permite astfel scanarea eficientă
+        val filter = ScanFilter.Builder()
+            .setManufacturerData(MANUFACTURER_ID, ByteArray(0))
+            .build()
+
+        bleScanner?.startScan(listOf(filter), settings, object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val rawData = result.scanRecord?.getManufacturerSpecificData(MANUFACTURER_ID) ?: return
-                if (rawData.size != 11) return
+                val raw = result.scanRecord?.getManufacturerSpecificData(MANUFACTURER_ID) ?: return
+                if (raw.size != 11) return
 
-                val buffer = ByteBuffer.wrap(rawData)
-                val sosId = buffer.short
-                val hops = buffer.get()
-                val lat = buffer.float
-                val lon = buffer.float
+                val buf = ByteBuffer.wrap(raw)
+                val sosId = buf.short
+                val hops = buf.get().toInt()
+                val lat = buf.float
+                val lon = buf.float
 
-                if (sosId == mySosId) return
+                if (sosId == mySosId && isSosActive) return
+                if (lat.isNaN() || lon.isNaN() || lat !in -90f..90f || lon !in -180f..180f) return
 
-                val packetKey = "$sosId-$hops"
-if (seenPackets.contains(packetKey)) return
-seenPackets.add(packetKey)
-runOnUiThread {
-val victimPoint = GeoPoint(lat.toDouble(), lon.toDouble())
-addAlertMarker(victimPoint, "SOS #$sosId (Sarituri BT: $hops)")
-map.controller.animateTo(victimPoint)
-updateStatus("ALARMA PRIMITA! ID: #$sosId | Sarituri BT: $hops\nCoord: $lat, $lon")
-}
-if (!isSosActive && hops < 10) {
-val nextHop = (hops + 1).toByte()
-broadcastSosPacket(sosId, nextHop, lat, lon)
-handler.postDelayed({
-if (!isSosActive) stopAdvertising()
-}, 15000)
-}
-}
-})
-}
-private fun updateSelfMarker(point: GeoPoint) {
-if (myMarker == null) {
-myMarker = Marker(map).apply {
-setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-title = "Locatia mea"
-}
-map.overlays.add(myMarker)
-}
-myMarker?.position = point
-map.invalidate()
-}
-private fun addAlertMarker(point: GeoPoint, title: String) {
-val marker = Marker(map)
-marker.position = point
-marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-marker.title = title
-map.overlays.add(marker)
-map.invalidate()
-}
-private fun updateStatus(msg: String) {
-runOnUiThread { statusText.text = msg }
-}
+                // Cheia = sosId. Reținem doar cea mai scurtă cale; ignorăm duplicatele.
+                val known = relayQueue[sosId]
+                if (known != null && known.hops <= hops) return
+
+                val nextHops = hops + 1
+                if (nextHops <= MAX_HOPS) {
+                    relayQueue[sosId] = Packet(sosId, nextHops, lat, lon)
+                }
+                runOnUiThread {
+                    val point = GeoPoint(lat.toDouble(), lon.toDouble())
+                    setAlertMarker(sosId, point, "SOS #$sosId (salturi BT: $hops)")
+                    if (known == null) map.controller.animateTo(point)
+                    updateStatus("ALARMĂ PRIMITĂ! ID: #$sosId | Salturi BT: $hops\nCoord: $lat, $lon")
+                }
+            }
+        })
+    }
+
+    private fun updateSelfMarker(point: GeoPoint) {
+        runOnUiThread {
+            if (myMarker == null) {
+                myMarker = Marker(map).apply {
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    title = "Locația mea"
+                }
+                map.overlays.add(myMarker)
+            }
+            myMarker?.position = point
+            map.invalidate()
+        }
+    }
+
+    private fun setAlertMarker(id: Short, point: GeoPoint, title: String) {
+        val marker = alertMarkers.getOrPut(id) {
+            Marker(map).apply {
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                map.overlays.add(this)
+            }
+        }
+        marker.position = point
+        marker.title = title
+        map.invalidate()
+    }
+
+    private fun updateStatus(msg: String) {
+        runOnUiThread { statusText.text = msg }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        map.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        map.onPause()
+    }
 }
