@@ -229,7 +229,7 @@ class MainActivity : AppCompatActivity() {
 
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-            .setTxPowerLevel(AdvertiseSettings.TX_POWER_HIGH)
+            ..setTxPowerLevel(3)
             .setConnectable(false)
             .build()
 
