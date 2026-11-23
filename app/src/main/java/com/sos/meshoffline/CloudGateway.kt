@@ -14,7 +14,7 @@ import java.util.concurrent.Executors
  * Dacă DB_URL e gol, funcția e dezactivată.
  */
 object CloudGateway {
-    const val DB_URL = ""
+    const val DB_URL = "https://sos-offline-mash-default-rtdb.europe-west1.firebasedatabase.app/"
 
     private val exec = Executors.newSingleThreadExecutor()
     private val lastSent = HashMap<Int, Long>()
