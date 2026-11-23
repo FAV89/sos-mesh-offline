@@ -728,14 +728,15 @@ li{padding:8px;border-bottom:1px solid var(--line);font-size:14px;cursor:pointer
   var map=L.map('map',{zoomControl:true}).setView([47.6567,23.585],14);
 
   // Hartă. Cheie CARTO gratuită: carto.com/basemaps/apikey. Dacă CARTO_KEY e goală, se folosește OpenStreetMap standard.
-  var CARTO_KEY='cb1_5dkf_1_57d40daf6b5b373875d498da';
-  var ATTR='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-  if(CARTO_KEY){
-    L.tileLayer('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key='+CARTO_KEY,
-      {maxZoom:19,attribution:ATTR+', &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(map);
-  } else {
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:ATTR}).addTo(map);
-  }
+ var ATTR='&copy; OpenStreetMap contributors';
+
+L.tileLayer(
+    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {
+        maxZoom: 19,
+        attribution: ATTR
+    }
+).addTo(map);
 
   var meMarker=L.circleMarker([0,0],{radius:9,color:'#fff',weight:3,fillColor:'#2f7de1',fillOpacity:1});
   var alerts={}; // id -> marker
