@@ -15,7 +15,10 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.annotation.SuppressLint
 import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -302,7 +305,48 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
     }
 
     private fun startMeshService() {
-        ContextCompat.startForegroundService(this, Intent(this, MeshForegroundService::class.java))
+        startLocalLocation()   // poziția apare pe hartă chiar dacă serviciul de fundal nu pornește
+        try {
+            ContextCompat.startForegroundService(this, Intent(this, MeshForegroundService::class.java))
+        } catch (e: Exception) {
+            statusText.text = "Serviciul de fundal nu a pornit: ${e.javaClass.simpleName}\nVerifică AndroidManifest.xml (declarația <service> și permisiunile FOREGROUND_SERVICE)."
+        }
+    }
+
+    // ----- Locație proprie (plasă de siguranță, independentă de serviciu) -----
+    private var locationManager: LocationManager? = null
+    private val localListener = object : LocationListener {
+        override fun onLocationChanged(loc: Location) {
+            MeshBus.location(loc.latitude, loc.longitude)
+            if (!MeshBus.sosActive) {
+                MeshBus.status("Poziție: %.5f, %.5f".format(loc.latitude, loc.longitude))
+            }
+        }
+        @Deprecated("Deprecated in Java")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startLocalLocation() {
+        if (locationManager != null) return
+        try {
+            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            locationManager = lm
+            var any = false
+            for (prov in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
+                if (lm.isProviderEnabled(prov)) {
+                    lm.requestLocationUpdates(prov, 2000L, 1f, localListener)
+                    any = true
+                }
+            }
+            if (!any) MeshBus.status("Locația e oprită în telefon. Pornește GPS-ul!")
+            (lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER))?.let { localListener.onLocationChanged(it) }
+        } catch (e: Exception) {
+            MeshBus.status("Eroare locație: ${e.javaClass.simpleName}")
+        }
     }
 
     // ----- Busolă: calcul -----
@@ -407,6 +451,11 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         stopFlash()          // lanterna se oprește când ieși din aplicație
         refreshButtons()
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        try { locationManager?.removeUpdates(localListener) } catch (_: Exception) {}
+        super.onDestroy()
     }
 
     override fun onResume() { super.onResume(); map.onResume() }
