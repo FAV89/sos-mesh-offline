@@ -803,6 +803,28 @@ li{padding:8px;border-bottom:1px solid var(--line);font-size:14px;cursor:pointer
     addAlert(id,lat,lon,true); renderList(); $('in').value=''; $('addmsg').textContent='Adăugat.';
   };
 
+
+  // ---- SOS-uri urcate în cloud de telefoanele cu internet (Firebase Realtime Database) ----
+  // Completează cu adresa bazei tale. Gol = dezactivat.
+  var DB_URL='';
+  var cloudMarkers={};
+  function pollCloud(){
+    if(!DB_URL) return;
+    fetch(DB_URL.replace(/\/$/,'')+'/sos.json').then(function(r){return r.json()}).then(function(d){
+      if(!d) return;
+      var cutoff=Date.now()/1000-24*3600, n=0;
+      Object.keys(d).forEach(function(k){
+        var a=d[k]; if(!a||typeof a.lat!=='number'||typeof a.lon!=='number'||a.timestamp<cutoff) return;
+        n++;
+        if(cloudMarkers[k]) map.removeLayer(cloudMarkers[k]);
+        cloudMarkers[k]=L.circleMarker([a.lat,a.lon],{radius:11,color:'#fff',weight:3,fillColor:'#e5393b',fillOpacity:1})
+          .bindPopup('SOS #'+esc(a.sosId)+' — '+esc(a.type)+'<br>salturi: '+esc(a.hops)+'<br>'+new Date(a.timestamp*1000).toLocaleString()).addTo(map);
+      });
+      if(n) status('SOS-uri active (24h): '+n);
+    }).catch(function(){});
+  }
+  pollCloud(); setInterval(pollCloud,15000);
+
   load().forEach(function(a){addAlert(a.id,a.lat,a.lon,false)});
   renderList();
 })();
