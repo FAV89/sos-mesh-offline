@@ -1,28 +1,32 @@
 package com.sos.meshoffline
 
 import android.Manifest
-import android.annotation.SuppressLint
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
-import android.bluetooth.le.*
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.hardware.GeomagneticField
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.tilesource.XYTileSource
@@ -31,67 +35,85 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.CopyrightOverlay
 import org.osmdroid.views.overlay.Marker
 import java.io.File
-import java.nio.ByteBuffer
-import kotlin.random.Random
 
-class MainActivity : AppCompatActivity() {
+/** Ecranul afișează harta, busola și controlează lanterna. Mesh-ul rulează în MeshForegroundService. */
+class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener {
 
     private lateinit var map: MapView
     private lateinit var statusText: TextView
     private lateinit var sosButton: Button
+    private lateinit var flashButton: Button
+    private lateinit var typeSpinner: Spinner
+    private lateinit var arrow: ArrowView
+    private lateinit var compassText: TextView
 
-    private var bluetoothAdapter: BluetoothAdapter? = null
-    private var bleAdvertiser: BluetoothLeAdvertiser? = null
-    private var bleScanner: BluetoothLeScanner? = null
-    private var locationManager: LocationManager? = null
-    private var hardwareStarted = false
-
-    private var myLat = 0.0
-    private var myLon = 0.0
-    private var isSosActive = false
-    private var mySosId: Short = Random.nextInt(1, 32000).toShort()
     private var myMarker: Marker? = null
+    private val alertMarkers = HashMap<Int, Marker>()
 
-    private val MANUFACTURER_ID = 0xFFFF
-    private val MAX_HOPS = 10
-    private val handler = Handler(Looper.getMainLooper())
+    // ----- Busolă -----
+    private lateinit var sensorManager: SensorManager
+    private var azimuth = 0f        // grade față de nordul adevărat
+    private var hasAzimuth = false
 
-    // Pachetele pe care le retransmitem (SOS-urile altora). Cheia = sosId.
-    private class Packet(val id: Short, var hops: Int, val lat: Float, val lon: Float)
-    private val relayQueue = LinkedHashMap<Short, Packet>()
-    private val alertMarkers = HashMap<Short, Marker>()
-    private var rotateIndex = 0
-
-    // Buclă unică de emisie: o dată la 3 secunde alege următorul pachet (al meu + cele relayate)
-    private val broadcastLoop = object : Runnable {
+    // ----- Lanternă Morse -----
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private var torchId: String? = null
+    private var flashOn = false
+    private var morseIndex = 0
+    private val morseSteps: List<Pair<Boolean, Long>> = buildList {
+        val u = 250L
+        for (letter in listOf(listOf(1, 1, 1), listOf(3, 3, 3), listOf(1, 1, 1))) { // S O S
+            for (s in letter) { add(true to s * u); add(false to u) }
+            add(false to 2 * u)
+        }
+        add(false to 4 * u)   // pauză între repetări
+    }
+    private val morseRunner = object : Runnable {
         override fun run() {
-            val toSend = ArrayList<Packet>()
-            if (isSosActive && myLat != 0.0 && myLon != 0.0) {
-                toSend.add(Packet(mySosId, 0, myLat.toFloat(), myLon.toFloat()))
-            }
-            toSend.addAll(relayQueue.values)
-            if (toSend.isNotEmpty()) {
-                rotateIndex = (rotateIndex + 1) % toSend.size
-                val p = toSend[rotateIndex]
-                advertise(p.id, p.hops, p.lat, p.lon)
-            } else {
-                stopAdvertising()
-            }
-            handler.postDelayed(this, 3000)
+            if (!flashOn) return
+            val (on, ms) = morseSteps[morseIndex]
+            setTorch(on)
+            morseIndex = (morseIndex + 1) % morseSteps.size
+            uiHandler.postDelayed(this, ms)
+        }
+    }
+
+    // Săgeată care arată direcția spre cea mai apropiată alarmă
+    private class ArrowView(ctx: Context) : View(ctx) {
+        var angle = 0f
+        var active = false
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val path = Path()
+        override fun onDraw(c: Canvas) {
+            val cx = width / 2f; val cy = height / 2f; val r = minOf(cx, cy) * 0.9f
+            paint.style = Paint.Style.STROKE; paint.strokeWidth = 4f; paint.color = Color.GRAY
+            c.drawCircle(cx, cy, r, paint)
+            if (!active) return
+            c.save(); c.rotate(angle, cx, cy)
+            path.reset()
+            path.moveTo(cx, cy - r * 0.85f)
+            path.lineTo(cx + r * 0.35f, cy + r * 0.5f)
+            path.lineTo(cx, cy + r * 0.25f)
+            path.lineTo(cx - r * 0.35f, cy + r * 0.5f)
+            path.close()
+            paint.style = Paint.Style.FILL; paint.color = Color.parseColor("#E5393B")
+            c.drawPath(path, paint)
+            c.restore()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // User-Agent descriptiv + cache în stocarea privată a aplicației
         val cfg = Configuration.getInstance()
         cfg.userAgentValue = "com.sos.meshoffline/1.0 (SOS Mesh Offline; Android)"
         cfg.osmdroidBasePath = File(filesDir, "osmdroid")
         cfg.osmdroidTileCache = File(cfg.osmdroidBasePath, "tiles")
 
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        findTorch()
 
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setupUI()
         checkPermissions()
     }
@@ -103,15 +125,30 @@ class MainActivity : AppCompatActivity() {
         }
 
         statusText = TextView(this).apply {
-            text = "Inițializare GPS și Bluetooth Mesh..."
+            text = MeshBus.status
             setTextColor(Color.WHITE)
-            textSize = 15f
-            setPadding(24, 32, 24, 24)
+            textSize = 14f
+            setPadding(24, 24, 24, 8)
             gravity = Gravity.CENTER
         }
 
-        // Hartă: dacă ai cheie CARTO (gratuită, carto.com/basemaps/apikey) o pui aici.
-        // Dacă rămâne goală, se folosesc tile-urile standard OpenStreetMap (nu necesită cheie).
+        // Rând busolă: săgeată + text distanță/azimut
+        arrow = ArrowView(this)
+        compassText = TextView(this).apply {
+            text = "Busolă: nicio alarmă primită"
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(16, 0, 16, 0)
+        }
+        val compassRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(16, 8, 16, 8)
+            addView(arrow, LinearLayout.LayoutParams(160, 160))
+            addView(compassText, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+        }
+
+        // Cheie CARTO gratuită (carto.com/basemaps/apikey). Goală = OpenStreetMap standard.
         val cartoKey = "cb1_5dkf_1_57d40daf6b5b373875d498da"
         val tileSource = if (cartoKey.isNotBlank()) {
             object : XYTileSource(
@@ -122,252 +159,256 @@ class MainActivity : AppCompatActivity() {
                 override fun getTileURLString(pMapTileIndex: Long): String =
                     super.getTileURLString(pMapTileIndex) + "?key=" + cartoKey
             }
-        } else {
-            TileSourceFactory.MAPNIK
-        }
+        } else TileSourceFactory.MAPNIK
 
         map = MapView(this).apply {
             setTileSource(tileSource)
             setMultiTouchControls(true)
             controller.setZoom(15.0)
             controller.setCenter(GeoPoint(47.6567, 23.5850))
-            overlays.add(CopyrightOverlay(this@MainActivity)) // atribuirea hărții
+            overlays.add(CopyrightOverlay(this@MainActivity))
+        }
+
+        typeSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, MeshBus.TYPES)
+            setBackgroundColor(Color.parseColor("#2A2A2A"))
         }
 
         sosButton = Button(this).apply {
-            text = "TRIMITE ALARMA SOS"
-            setBackgroundColor(Color.parseColor("#D32F2F"))
             setTextColor(Color.WHITE)
-            textSize = 18f
-            setPadding(20, 40, 20, 40)
+            textSize = 17f
             setOnClickListener { toggleSos() }
         }
+        flashButton = Button(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 17f
+            setOnClickListener { toggleFlash() }
+        }
+        val buttons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(sosButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f))
+            addView(flashButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        refreshButtons()
 
         layout.addView(statusText)
+        layout.addView(compassRow)
         layout.addView(map, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-        layout.addView(sosButton)
+        layout.addView(typeSpinner)
+        layout.addView(buttons)
         setContentView(layout)
     }
 
-    private fun neededPermissions(): List<String> {
-        val perms = mutableListOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            perms.add(Manifest.permission.BLUETOOTH_SCAN)
-            perms.add(Manifest.permission.BLUETOOTH_ADVERTISE)
-            perms.add(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun refreshButtons() {
+        if (MeshBus.sosActive) {
+            sosButton.text = "OPREȘTE SOS"
+            sosButton.setBackgroundColor(Color.parseColor("#388E3C"))
+        } else {
+            sosButton.text = "TRIMITE ALARMA SOS"
+            sosButton.setBackgroundColor(Color.parseColor("#D32F2F"))
         }
-        return perms
+        if (torchId == null) {
+            flashButton.text = "FĂRĂ LANTERNĂ"
+            flashButton.isEnabled = false
+            flashButton.setBackgroundColor(Color.DKGRAY)
+        } else if (flashOn) {
+            flashButton.text = "OPREȘTE\nLANTERNA"
+            flashButton.setBackgroundColor(Color.parseColor("#F9A825"))
+        } else {
+            flashButton.text = "LANTERNĂ\nSOS"
+            flashButton.setBackgroundColor(Color.parseColor("#455A64"))
+        }
+    }
+
+    // ----- SOS -----
+    private fun toggleSos() {
+        if (!MeshBus.sosActive && MeshBus.myLat == 0.0) {
+            Toast.makeText(this, "Așteaptă fixarea semnalului GPS!", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val i = Intent(this, MeshForegroundService::class.java)
+        if (MeshBus.sosActive) {
+            i.action = MeshForegroundService.ACTION_SOS_STOP
+            MeshBus.sosActive = false
+        } else {
+            i.action = MeshForegroundService.ACTION_SOS_START
+            i.putExtra(MeshForegroundService.EXTRA_TYPE, typeSpinner.selectedItemPosition)
+            MeshBus.sosActive = true
+        }
+        startService(i)
+        refreshButtons()
+    }
+
+    // ----- Lanternă -----
+    private fun findTorch() {
+        try {
+            val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            torchId = cm.cameraIdList.firstOrNull {
+                cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            }
+        } catch (_: Exception) { torchId = null }
+    }
+
+    private fun setTorch(on: Boolean) {
+        try {
+            val id = torchId ?: return
+            (getSystemService(Context.CAMERA_SERVICE) as CameraManager).setTorchMode(id, on)
+        } catch (_: Exception) {}
+    }
+
+    private fun toggleFlash() {
+        if (flashOn) stopFlash() else {
+            flashOn = true
+            morseIndex = 0
+            uiHandler.post(morseRunner)
+        }
+        refreshButtons()
+    }
+
+    private fun stopFlash() {
+        flashOn = false
+        uiHandler.removeCallbacks(morseRunner)
+        setTorch(false)
+    }
+
+    // ----- Permisiuni -----
+    private fun neededPermissions(): List<String> {
+        val p = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            p.add(Manifest.permission.BLUETOOTH_SCAN)
+            p.add(Manifest.permission.BLUETOOTH_ADVERTISE)
+            p.add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+        if (Build.VERSION.SDK_INT >= 33) p.add(Manifest.permission.POST_NOTIFICATIONS)
+        return p
     }
 
     private fun checkPermissions() {
         val missing = neededPermissions().filter {
             ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
-        if (missing.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, missing.toTypedArray(), 101)
-        } else {
-            initHardware()
-        }
+        if (missing.isNotEmpty()) ActivityCompat.requestPermissions(this, missing.toTypedArray(), 101)
+        else startMeshService()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-            initHardware()
+        val core = neededPermissions().filter { it != Manifest.permission.POST_NOTIFICATIONS }
+        if (core.all { ActivityCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
+            startMeshService()
         } else {
-            updateStatus("Permisiunile (locație + Bluetooth) sunt necesare pentru SOS.")
+            statusText.text = "Permisiunile (locație + Bluetooth) sunt necesare pentru SOS."
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private fun initHardware() {
-        if (hardwareStarted) return
-        hardwareStarted = true
+    private fun startMeshService() {
+        ContextCompat.startForegroundService(this, Intent(this, MeshForegroundService::class.java))
+    }
 
-        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-
-        val locListener = object : LocationListener {
-            override fun onLocationChanged(loc: Location) {
-                myLat = loc.latitude
-                myLon = loc.longitude
-                if (!isSosActive) {
-                    updateStatus("Poziție fixă: %.5f, %.5f\nScanare Mesh activă...".format(myLat, myLon))
-                }
-                updateSelfMarker(GeoPoint(myLat, myLon))
-            }
-            @Deprecated("Deprecated in Java")
-            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-            override fun onProviderEnabled(provider: String) {}
-            override fun onProviderDisabled(provider: String) {}
-        }
-
-        try {
-            if (locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true) {
-                locationManager?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 1f, locListener)
-            }
-            if (locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true) {
-                locationManager?.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 1f, locListener)
-            }
-            val lastLoc = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                ?: locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-            if (lastLoc != null) {
-                locListener.onLocationChanged(lastLoc)
-                map.controller.animateTo(GeoPoint(lastLoc.latitude, lastLoc.longitude))
-            }
-        } catch (e: Exception) {
-            updateStatus("Eroare locație: pornește GPS-ul din telefon!")
-        }
-
-        val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        bluetoothAdapter = btManager.adapter
-        if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) {
-            updateStatus("ATENȚIE: pornește Bluetooth-ul!")
-            hardwareStarted = false
+    // ----- Busolă: calcul -----
+    private fun updateCompass() {
+        if (MeshBus.myLat == 0.0 || MeshBus.alerts.isEmpty()) {
+            arrow.active = false; arrow.invalidate()
+            compassText.text = "Busolă: nicio alarmă primită"
             return
         }
-
-        bleAdvertiser = bluetoothAdapter?.bluetoothLeAdvertiser
-        bleScanner = bluetoothAdapter?.bluetoothLeScanner
-
-        startMeshScanning()
-        handler.post(broadcastLoop)
-    }
-
-    private fun toggleSos() {
-        if (myLat == 0.0 || myLon == 0.0) {
-            Toast.makeText(this, "Așteaptă fixarea semnalului GPS!", Toast.LENGTH_SHORT).show()
-            return
+        var best: MeshBus.Alert? = null
+        var bestDist = Float.MAX_VALUE
+        val r = FloatArray(2)
+        for (a in MeshBus.alerts.values) {
+            Location.distanceBetween(MeshBus.myLat, MeshBus.myLon, a.lat, a.lon, r)
+            if (r[0] < bestDist) { bestDist = r[0]; best = a }
         }
-        isSosActive = !isSosActive
-        if (isSosActive) {
-            mySosId = Random.nextInt(1, 32000).toShort()
-            sosButton.text = "OPREȘTE ALARMA SOS"
-            sosButton.setBackgroundColor(Color.parseColor("#388E3C"))
-            updateStatus("EMITERE SOS ACTIVĂ (#$mySosId)!\nSemnalul se propagă prin Bluetooth...")
-        } else {
-            sosButton.text = "TRIMITE ALARMA SOS"
-            sosButton.setBackgroundColor(Color.parseColor("#D32F2F"))
-            updateStatus("Alarma oprită. Scanare Mesh activă...")
+        val a = best ?: return
+        Location.distanceBetween(MeshBus.myLat, MeshBus.myLon, a.lat, a.lon, r)
+        val bearing = (r[1] + 360f) % 360f   // azimut către victimă, 0..360
+
+        arrow.active = hasAzimuth
+        arrow.angle = ((bearing - azimuth) + 360f) % 360f
+        arrow.invalidate()
+
+        val dist = if (bestDist >= 1000f) "%.2f km".format(bestDist / 1000f) else "${bestDist.toInt()} m"
+        val dirs = arrayOf("N", "NE", "E", "SE", "S", "SV", "V", "NV")
+        val dir = dirs[((bearing + 22.5f) / 45f).toInt() % 8]
+        compassText.text = "SOS #${a.id}\n$dist • ${bearing.toInt()}° $dir" +
+            if (hasAzimuth) "" else "\n(busola se calibrează...)"
+    }
+
+    override fun onSensorChanged(e: SensorEvent) {
+        if (e.sensor.type != Sensor.TYPE_ROTATION_VECTOR) return
+        val rot = FloatArray(9); val ori = FloatArray(3)
+        SensorManager.getRotationMatrixFromVector(rot, e.values)
+        SensorManager.getOrientation(rot, ori)
+        var az = Math.toDegrees(ori[0].toDouble()).toFloat()
+        if (MeshBus.myLat != 0.0) {   // corecție declinație magnetică → nord adevărat
+            az += GeomagneticField(MeshBus.myLat.toFloat(), MeshBus.myLon.toFloat(), 0f, System.currentTimeMillis()).declination
         }
+        az = (az + 360f) % 360f
+        if (!hasAzimuth) { azimuth = az; hasAzimuth = true }
+        else {   // netezire pe cerc
+            var d = az - azimuth
+            if (d > 180f) d -= 360f
+            if (d < -180f) d += 360f
+            azimuth = (azimuth + 0.15f * d + 360f) % 360f
+        }
+        updateCompass()
     }
 
-    @SuppressLint("MissingPermission")
-    private fun advertise(sosId: Short, hops: Int, lat: Float, lon: Float) {
-        stopAdvertising()
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
-        val buffer = ByteBuffer.allocate(11)
-        buffer.putShort(sosId)
-        buffer.put(hops.toByte())
-        buffer.putFloat(lat)
-        buffer.putFloat(lon)
-
-        val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-            .setConnectable(false)
-            .build()
-
-        val data = AdvertiseData.Builder()
-            .addManufacturerData(MANUFACTURER_ID, buffer.array())
-            .build()
-
-        try {
-            bleAdvertiser?.startAdvertising(settings, data, advertiseCallback)
-        } catch (_: Exception) {}
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun stopAdvertising() {
-        try {
-            bleAdvertiser?.stopAdvertising(advertiseCallback)
-        } catch (_: Exception) {}
-    }
-
-    private val advertiseCallback = object : AdvertiseCallback() {}
-
-    @SuppressLint("MissingPermission")
-    private fun startMeshScanning() {
-        val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .build()
-
-        // Filtru pe ID-ul nostru: Android permite astfel scanarea eficientă
-        val filter = ScanFilter.Builder()
-            .setManufacturerData(MANUFACTURER_ID, ByteArray(0))
-            .build()
-
-        bleScanner?.startScan(listOf(filter), settings, object : ScanCallback() {
-            override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val raw = result.scanRecord?.getManufacturerSpecificData(MANUFACTURER_ID) ?: return
-                if (raw.size != 11) return
-
-                val buf = ByteBuffer.wrap(raw)
-                val sosId = buf.short
-                val hops = buf.get().toInt()
-                val lat = buf.float
-                val lon = buf.float
-
-                if (sosId == mySosId && isSosActive) return
-                if (lat.isNaN() || lon.isNaN() || lat !in -90f..90f || lon !in -180f..180f) return
-
-                // Cheia = sosId. Reținem doar cea mai scurtă cale; ignorăm duplicatele.
-                val known = relayQueue[sosId]
-                if (known != null && known.hops <= hops) return
-
-                val nextHops = hops + 1
-                if (nextHops <= MAX_HOPS) {
-                    relayQueue[sosId] = Packet(sosId, nextHops, lat, lon)
-                }
-                runOnUiThread {
-                    val point = GeoPoint(lat.toDouble(), lon.toDouble())
-                    setAlertMarker(sosId, point, "SOS #$sosId (salturi BT: $hops)")
-                    if (known == null) map.controller.animateTo(point)
-                    updateStatus("ALARMĂ PRIMITĂ! ID: #$sosId | Salturi BT: $hops\nCoord: $lat, $lon")
-                }
+    // ----- MeshBus.Listener -----
+    override fun onLocation(lat: Double, lon: Double) {
+        val p = GeoPoint(lat, lon)
+        if (myMarker == null) {
+            myMarker = Marker(map).apply {
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                title = "Locația mea"
             }
-        })
-    }
-
-    private fun updateSelfMarker(point: GeoPoint) {
-        runOnUiThread {
-            if (myMarker == null) {
-                myMarker = Marker(map).apply {
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    title = "Locația mea"
-                }
-                map.overlays.add(myMarker)
-            }
-            myMarker?.position = point
-            map.invalidate()
+            map.overlays.add(myMarker)
+            map.controller.animateTo(p)
         }
+        myMarker?.position = p
+        map.invalidate()
+        updateCompass()
     }
 
-    private fun setAlertMarker(id: Short, point: GeoPoint, title: String) {
-        val marker = alertMarkers.getOrPut(id) {
+    override fun onAlert(a: MeshBus.Alert, isNew: Boolean) {
+        val p = GeoPoint(a.lat, a.lon)
+        val m = alertMarkers.getOrPut(a.id) {
             Marker(map).apply {
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                 map.overlays.add(this)
             }
         }
-        marker.position = point
-        marker.title = title
+        m.position = p
+        m.title = "SOS #${a.id} – ${MeshBus.TYPES.getOrElse(a.type) { "SOS" }} (salturi: ${a.hops})"
+        if (isNew) map.controller.animateTo(p)
         map.invalidate()
+        updateCompass()
     }
 
-    private fun updateStatus(msg: String) {
-        runOnUiThread { statusText.text = msg }
+    override fun onStatus(text: String) { statusText.text = text }
+
+    override fun onStart() {
+        super.onStart()
+        MeshBus.listener = this
+        statusText.text = MeshBus.status
+        refreshButtons()
+        if (MeshBus.myLat != 0.0) onLocation(MeshBus.myLat, MeshBus.myLon)
+        MeshBus.alerts.values.forEach { onAlert(it, false) }
+        sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
+        } ?: run { compassText.text = "Telefonul nu are senzor de busolă." }
     }
 
-    override fun onResume() {
-        super.onResume()
-        map.onResume()
+    override fun onStop() {
+        if (MeshBus.listener === this) MeshBus.listener = null
+        sensorManager.unregisterListener(this)
+        stopFlash()          // lanterna se oprește când ieși din aplicație
+        refreshButtons()
+        super.onStop()
     }
 
-    override fun onPause() {
-        super.onPause()
-        map.onPause()
-    }
+    override fun onResume() { super.onResume(); map.onResume() }
+    override fun onPause() { super.onPause(); map.onPause() }
 }
