@@ -1,0 +1,44 @@
+package com.sos.meshoffline
+
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.ConcurrentHashMap
+
+/** Legătura dintre serviciul de fundal și ecran (același proces). */
+object MeshBus {
+    val TYPES = arrayOf("SOS GENERAL", "URGENTA MEDICALA", "INCENDIU / PERICOL")
+
+    class Alert(val id: Int, val hops: Int, val type: Int, val lat: Double, val lon: Double)
+
+    interface Listener {
+        fun onLocation(lat: Double, lon: Double)
+        fun onAlert(a: Alert, isNew: Boolean)
+        fun onStatus(text: String)
+    }
+
+    @Volatile var myLat = 0.0
+    @Volatile var myLon = 0.0
+    @Volatile var sosActive = false
+    @Volatile var mySosId = 0
+    @Volatile var mySosType = 0
+    @Volatile var status = "Pornesc serviciul Mesh..."
+    val alerts = ConcurrentHashMap<Int, Alert>()
+    @Volatile var listener: Listener? = null
+
+    private val main = Handler(Looper.getMainLooper())
+
+    fun location(lat: Double, lon: Double) {
+        myLat = lat; myLon = lon
+        main.post { listener?.onLocation(lat, lon) }
+    }
+
+    fun alert(a: Alert, isNew: Boolean) {
+        alerts[a.id] = a
+        main.post { listener?.onAlert(a, isNew) }
+    }
+
+    fun status(text: String) {
+        status = text
+        main.post { listener?.onStatus(text) }
+    }
+}
