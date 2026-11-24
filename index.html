@@ -133,9 +133,6 @@ if(navigator.geolocation){
         maximumAge:5000
       });
 }
-      status(sosOn?('SOS ACTIV #'+sosId+' — '+sosText().slice(-20)):('Poziție: '+me.lat.toFixed(5)+', '+me.lon.toFixed(5)));
-    },function(){status('Nu am acces la GPS. Pornește locația și permite accesul.')},
-    {enableHighAccuracy:true,maximumAge:5000});
   } else status('Acest browser nu are GPS.');
   $('sos').onclick=function(){
     if(!me){status('Aștept poziția GPS…');return}
