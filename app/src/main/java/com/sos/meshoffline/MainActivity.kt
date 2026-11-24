@@ -102,6 +102,8 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         if (!animating && needAnim()) { animating = true; uiHandler.post(animRunner) }
     }
 
+    private class Hit(val x: Float, val y: Float, val alert: MeshBus.Alert?, val person: MeshBus.Person?)
+
     // Săgeata busolei
     private class ArrowView(ctx: Context) : View(ctx) {
         var angle = 0f
@@ -138,7 +140,6 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             textSize = dp(13f); textAlign = Paint.Align.CENTER; style = Paint.Style.STROKE
             strokeWidth = dp(3.5f); color = Color.argb(220, 0, 0, 0); isFakeBoldText = true
         }
-        private class Hit(val x: Float, val y: Float, val alert: MeshBus.Alert?, val person: MeshBus.Person?)
         private val hits = ArrayList<Hit>()
 
         private val RED = Color.parseColor("#E5393B")
