@@ -51,6 +51,10 @@ class MeshForegroundService : Service() {
     }
 
     @Volatile private var ownUploading = false
+    @Volatile private var polling = false
+    private var lastPoll = 0L
+    private var firstPollDone = false
+    private val cloudIds = HashSet<Int>()
     private var lastOwnUpload = 0L
 
     private val handler = Handler(Looper.getMainLooper())
@@ -132,6 +136,27 @@ class MeshForegroundService : Service() {
             }
             list.addAll(relayQueue.values)
 
+            // CITIRE din cloud (alarme de pe pagina web sau de la alte telefoane), la fiecare 20 s, cât timp există internet
+            if (CloudGateway.enabled && !polling && now - lastPoll > 20_000 && CloudGateway.hasInternet(this@MeshForegroundService)) {
+                polling = true
+                lastPoll = now
+                CloudGateway.fetchAlerts(this@MeshForegroundService) { list ->
+                    if (list != null) {
+                        val ids = HashSet<Int>()
+                        for (a in list) {
+                            if (MeshBus.sosActive && a.id == MeshBus.mySosId) continue
+                            ids.add(a.id)
+                            val isNew = firstPollDone && !MeshBus.alerts.containsKey(a.id)
+                            MeshBus.alert(a, isNew)
+                        }
+                        for (old in cloudIds) if (old !in ids) MeshBus.remove(old)   // alarmă oprită, dispare de pe hartă
+                        cloudIds.clear(); cloudIds.addAll(ids)
+                        firstPollDone = true
+                    }
+                    polling = false
+                }
+            }
+
             // PUNTE: alarmele primite prin Bluetooth se urcă în cloud imediat ce există internet (chiar slab).
             // Dacă urcarea eșuează, se reîncearcă la următorul ciclu (3 s) până reușește.
             if (CloudGateway.enabled && CloudGateway.hasInternet(this@MeshForegroundService)) {
@@ -193,10 +218,12 @@ class MeshForegroundService : Service() {
                 MeshBus.status("EMITERE SOS ACTIVĂ #${MeshBus.mySosId}\n${MeshBus.TYPES.getOrElse(MeshBus.mySosType) { "SOS" }}")
             }
             ACTION_SOS_STOP -> {
+                CloudGateway.delete(this, MeshBus.mySosId)
                 MeshBus.sosActive = false
                 MeshBus.status("Alarma oprită. Mesh activ în fundal.")
             }
             ACTION_QUIT -> {
+                if (MeshBus.sosActive) CloudGateway.delete(this, MeshBus.mySosId)
                 MeshBus.sosActive = false
                 stopSelf()
             }

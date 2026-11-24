@@ -18,6 +18,7 @@ object MeshBus {
     interface Listener {
         fun onLocation(lat: Double, lon: Double)
         fun onAlert(a: Alert, isNew: Boolean)
+        fun onAlertRemoved(id: Int)
         fun onStatus(text: String)
     }
 
@@ -40,6 +41,11 @@ object MeshBus {
     fun alert(a: Alert, isNew: Boolean) {
         alerts[a.id] = a
         main.post { listener?.onAlert(a, isNew) }
+    }
+
+    fun remove(id: Int) {
+        alerts.remove(id)
+        main.post { listener?.onAlertRemoved(id) }
     }
 
     fun status(text: String) {

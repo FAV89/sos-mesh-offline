@@ -58,4 +58,53 @@ object CloudGateway {
             onDone(ok)
         }
     }
+
+    /** Citește alarmele active din cloud (ultimele 6 ore), inclusiv cele trimise de pe pagina web. */
+    fun fetchAlerts(ctx: Context, onResult: (List<MeshBus.Alert>?) -> Unit) {
+        if (!enabled || !hasInternet(ctx.applicationContext)) { onResult(null); return }
+        exec.execute {
+            var res: List<MeshBus.Alert>? = null
+            try {
+                val conn = URL("${DB_URL.trimEnd('/')}/sos.json").openConnection() as HttpURLConnection
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+                if (conn.responseCode in 200..299) {
+                    val txt = conn.inputStream.bufferedReader().use { it.readText() }
+                    val list = ArrayList<MeshBus.Alert>()
+                    if (txt.isNotBlank() && txt.trim() != "null") {
+                        val o = JSONObject(txt)
+                        val cutoff = System.currentTimeMillis() / 1000 - 6 * 3600
+                        for (k in o.keys()) {
+                            val a = o.optJSONObject(k) ?: continue
+                            if (a.optLong("timestamp") < cutoff) continue
+                            val id = a.optInt("sosId", -1)
+                            val lat = a.optDouble("lat", Double.NaN)
+                            val lon = a.optDouble("lon", Double.NaN)
+                            if (id < 0 || lat.isNaN() || lon.isNaN()) continue
+                            val t = MeshBus.TYPES.indexOf(a.optString("type")).coerceAtLeast(0)
+                            list.add(MeshBus.Alert(id, a.optInt("hops"), t, lat, lon, a.optString("uid"), a.optString("name")))
+                        }
+                    }
+                    res = list
+                }
+                conn.disconnect()
+            } catch (_: Exception) {}
+            onResult(res)
+        }
+    }
+
+    /** Șterge alarma din cloud (când SOS-ul se oprește). Dacă nu e internet, rămâne până expiră. */
+    fun delete(ctx: Context, id: Int) {
+        if (!enabled || !hasInternet(ctx.applicationContext)) return
+        exec.execute {
+            try {
+                val conn = URL("${DB_URL.trimEnd('/')}/sos/$id.json").openConnection() as HttpURLConnection
+                conn.requestMethod = "DELETE"
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+                conn.responseCode
+                conn.disconnect()
+            } catch (_: Exception) {}
+        }
+    }
 }

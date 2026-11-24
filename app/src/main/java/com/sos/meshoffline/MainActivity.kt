@@ -36,6 +36,7 @@ import androidx.core.content.ContextCompat
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.tilesource.XYTileSource
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.CopyrightOverlay
@@ -212,7 +213,29 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         layout.addView(profileText)
         layout.addView(statusText)
         layout.addView(compassRow)
-        layout.addView(map, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        // Butoane peste hartă: "EU" = centrează pe locația mea, "TOATE" = arată toate alarmele + pe mine
+        fun mapButton(label: String, onClick: () -> Unit) = Button(this).apply {
+            text = label
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#CC1F3A5F"))
+            setPadding(24, 16, 24, 16)
+            setOnClickListener { onClick() }
+        }
+        val fab = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(mapButton("📍 EU") { centerOnMe() })
+            addView(mapButton("⤢ TOATE") { fitAll() },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 12 })
+        }
+        val mapBox = FrameLayout(this).apply {
+            addView(map, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            addView(fab, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.END or Gravity.BOTTOM
+            ).apply { setMargins(0, 0, 20, 20) })
+        }
+        layout.addView(mapBox, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         layout.addView(typeSpinner)
         layout.addView(buttons)
         setContentView(layout)
@@ -240,6 +263,32 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
     }
 
     // ----- SOS -----
+    private fun centerOnMe() {
+        if (MeshBus.myLat == 0.0) {
+            Toast.makeText(this, "Aștept fixarea GPS...", Toast.LENGTH_SHORT).show()
+            return
+        }
+        map.controller.setZoom(18.0)
+        map.controller.animateTo(GeoPoint(MeshBus.myLat, MeshBus.myLon))
+    }
+
+    private fun fitAll() {
+        val pts = ArrayList<GeoPoint>()
+        if (MeshBus.myLat != 0.0) pts.add(GeoPoint(MeshBus.myLat, MeshBus.myLon))
+        MeshBus.alerts.values.forEach { pts.add(GeoPoint(it.lat, it.lon)) }
+        if (pts.isEmpty()) {
+            Toast.makeText(this, "Nu există poziții de afișat.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val box = BoundingBox.fromGeoPoints(pts)
+        if (pts.size == 1 || (box.latitudeSpan < 1e-5 && box.longitudeSpan < 1e-5)) {
+            map.controller.setZoom(17.0)
+            map.controller.animateTo(pts[0])
+        } else {
+            map.zoomToBoundingBox(box.increaseByScale(1.4f), true)
+        }
+    }
+
     private fun refreshProfile() {
         profileText.text = if (Profile.name.length >= 3) "Tu: ${Profile.label()}  (atinge ca să schimbi)" else "Setează-ți porecla"
     }
@@ -478,6 +527,14 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         m.title = "${a.label} – SOS #${a.id} – ${MeshBus.TYPES.getOrElse(a.type) { "SOS" }} (salturi: ${a.hops})"
         if (isNew) map.controller.animateTo(p)
         map.invalidate()
+        updateCompass()
+    }
+
+    override fun onAlertRemoved(id: Int) {
+        alertMarkers.remove(id)?.let {
+            map.overlays.remove(it)
+            map.invalidate()
+        }
         updateCompass()
     }
 
