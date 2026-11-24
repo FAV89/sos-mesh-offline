@@ -20,6 +20,8 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
+import android.text.InputFilter
+import android.text.InputType
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -27,6 +29,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -49,6 +52,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
     private lateinit var typeSpinner: Spinner
     private lateinit var arrow: ArrowView
     private lateinit var compassText: TextView
+    private lateinit var profileText: TextView
 
     private var myMarker: Marker? = null
     private val alertMarkers = HashMap<Int, Marker>()
@@ -113,12 +117,14 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         cfg.osmdroidBasePath = File(filesDir, "osmdroid")
         cfg.osmdroidTileCache = File(cfg.osmdroidBasePath, "tiles")
 
+        Profile.load(this)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         findTorch()
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setupUI()
         checkPermissions()
+        if (Profile.name.length < 3) showNameDialog(true)
     }
 
     private fun setupUI() {
@@ -126,6 +132,15 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#121212"))
         }
+
+        profileText = TextView(this).apply {
+            setTextColor(Color.parseColor("#90CAF9"))
+            textSize = 14f
+            setPadding(24, 20, 24, 0)
+            gravity = Gravity.CENTER
+            setOnClickListener { showNameDialog(false) }   // atingere = schimbă porecla
+        }
+        refreshProfile()
 
         statusText = TextView(this).apply {
             text = MeshBus.status
@@ -194,6 +209,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         }
         refreshButtons()
 
+        layout.addView(profileText)
         layout.addView(statusText)
         layout.addView(compassRow)
         layout.addView(map, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -224,7 +240,41 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
     }
 
     // ----- SOS -----
+    private fun refreshProfile() {
+        profileText.text = if (Profile.name.length >= 3) "Tu: ${Profile.label()}  (atinge ca să schimbi)" else "Setează-ți porecla"
+    }
+
+    private fun showNameDialog(force: Boolean) {
+        val input = EditText(this).apply {
+            hint = "Poreclă (3-8 litere/cifre)"
+            setText(Profile.name)
+            filters = arrayOf(InputFilter.LengthFilter(8))
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            setPadding(48, 32, 48, 32)
+        }
+        val b = AlertDialog.Builder(this)
+            .setTitle("Cine ești?")
+            .setMessage("Porecla ta e vizibilă celorlalți. ID-ul tău unic: ${Profile.uid}\n(doar litere și cifre, fără diacritice)")
+            .setView(input)
+            .setCancelable(!force)
+            .setPositiveButton("Salvează", null)
+        if (!force) b.setNegativeButton("Anulează", null)
+        val d = b.create()
+        d.show()
+        d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val n = Profile.sanitizeName(input.text.toString())
+            if (n.length < 3) {
+                input.error = "Minim 3 caractere (litere sau cifre, fără diacritice)"
+            } else {
+                Profile.setName(this, n)
+                refreshProfile()
+                d.dismiss()
+            }
+        }
+    }
+
     private fun toggleSos() {
+        if (Profile.name.length < 3) { showNameDialog(true); return }
         if (!MeshBus.sosActive && MeshBus.myLat == 0.0) {
             Toast.makeText(this, "Așteaptă fixarea semnalului GPS!", Toast.LENGTH_SHORT).show()
             return
@@ -374,7 +424,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         val dist = if (bestDist >= 1000f) "%.2f km".format(bestDist / 1000f) else "${bestDist.toInt()} m"
         val dirs = arrayOf("N", "NE", "E", "SE", "S", "SV", "V", "NV")
         val dir = dirs[((bearing + 22.5f) / 45f).toInt() % 8]
-        compassText.text = "SOS #${a.id}\n$dist • ${bearing.toInt()}° $dir" +
+        compassText.text = "${a.label} • SOS #${a.id}\n$dist • ${bearing.toInt()}° $dir" +
             if (hasAzimuth) "" else "\n(busola se calibrează...)"
     }
 
@@ -425,7 +475,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             }
         }
         m.position = p
-        m.title = "SOS #${a.id} – ${MeshBus.TYPES.getOrElse(a.type) { "SOS" }} (salturi: ${a.hops})"
+        m.title = "${a.label} – SOS #${a.id} – ${MeshBus.TYPES.getOrElse(a.type) { "SOS" }} (salturi: ${a.hops})"
         if (isNew) map.controller.animateTo(p)
         map.invalidate()
         updateCompass()

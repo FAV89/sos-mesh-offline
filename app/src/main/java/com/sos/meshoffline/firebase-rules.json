@@ -1,0 +1,20 @@
+{
+  "rules": {
+    "sos": {
+      ".read": true,
+      "$id": {
+        ".write": true,
+        ".validate": "$id.matches(/^[0-9]{1,5}$/) && newData.hasChildren(['sosId','type','lat','lon','hops','timestamp'])",
+        "sosId": { ".validate": "newData.isNumber()" },
+        "type": { ".validate": "newData.isString() && newData.val().length < 30" },
+        "lat": { ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90" },
+        "lon": { ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180" },
+        "hops": { ".validate": "newData.isNumber()" },
+        "timestamp": { ".validate": "newData.isNumber()" },
+        "name": { ".validate": "newData.isString() && newData.val().length <= 8" },
+        "uid": { ".validate": "newData.isString() && newData.val().length <= 4" },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

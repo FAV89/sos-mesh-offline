@@ -9,15 +9,15 @@ import java.net.URL
 import java.util.concurrent.Executors
 
 /**
- * Punte către internet: dacă telefonul are net, urcă SOS-ul în Firebase Realtime Database (REST).
- * Completează DB_URL cu adresa bazei tale, ex: https://PROIECT-default-rtdb.europe-west1.firebasedatabase.app
- * Dacă DB_URL e gol, funcția e dezactivată.
+ * Punte către internet: dacă telefonul are net (chiar și slab), urcă SOS-ul în Firebase Realtime Database (REST).
+ * Dacă DB_URL e gol, funcția e dezactivată. Reîncercarea o face serviciul (MeshForegroundService).
  */
 object CloudGateway {
     const val DB_URL = "https://sos-offline-mash-default-rtdb.europe-west1.firebasedatabase.app/"
 
     private val exec = Executors.newSingleThreadExecutor()
-    private val lastSent = HashMap<Int, Long>()
+
+    val enabled: Boolean get() = DB_URL.isNotBlank()
 
     fun hasInternet(ctx: Context): Boolean {
         val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -26,17 +26,14 @@ object CloudGateway {
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
-    fun upload(ctx: Context, id: Int, type: Int, lat: Double, lon: Double, hops: Int) {
-        if (DB_URL.isBlank()) return
-        val app = ctx.applicationContext
-        val now = System.currentTimeMillis()
-        synchronized(lastSent) {
-            val prev = lastSent[id]
-            if (prev != null && now - prev < 60_000) return   // max 1 urcare/minut per SOS
-            if (!hasInternet(app)) return
-            lastSent[id] = now
-        }
+    /** onDone(true) doar dacă serverul a confirmat scrierea; altfel serviciul reîncearcă mai târziu. */
+    fun upload(
+        ctx: Context, id: Int, type: Int, lat: Double, lon: Double, hops: Int,
+        name: String, uid: String, onDone: (Boolean) -> Unit
+    ) {
+        if (!enabled || !hasInternet(ctx.applicationContext)) { onDone(false); return }
         exec.execute {
+            var ok = false
             try {
                 val body = JSONObject().apply {
                     put("sosId", id)
@@ -44,20 +41,21 @@ object CloudGateway {
                     put("lat", lat)
                     put("lon", lon)
                     put("hops", hops)
-                    put("timestamp", now / 1000)
+                    put("name", name)
+                    put("uid", uid)
+                    put("timestamp", System.currentTimeMillis() / 1000)
                 }.toString()
                 val conn = URL("${DB_URL.trimEnd('/')}/sos/$id.json").openConnection() as HttpURLConnection
                 conn.requestMethod = "PUT"            // PUT = idempotent, același ID se suprascrie
-                conn.connectTimeout = 8000
-                conn.readTimeout = 8000
+                conn.connectTimeout = 15000           // internet slab (3G): timeout generos
+                conn.readTimeout = 15000
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.outputStream.use { it.write(body.toByteArray()) }
-                conn.responseCode
+                ok = conn.responseCode in 200..299
                 conn.disconnect()
-            } catch (_: Exception) {
-                synchronized(lastSent) { lastSent.remove(id) }  // reîncearcă la următorul pachet
-            }
+            } catch (_: Exception) {}
+            onDone(ok)
         }
     }
 }

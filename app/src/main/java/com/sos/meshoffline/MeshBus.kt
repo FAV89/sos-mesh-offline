@@ -8,7 +8,12 @@ import java.util.concurrent.ConcurrentHashMap
 object MeshBus {
     val TYPES = arrayOf("SOS GENERAL", "URGENTA MEDICALA", "INCENDIU / PERICOL")
 
-    class Alert(val id: Int, val hops: Int, val type: Int, val lat: Double, val lon: Double)
+    class Alert(
+        val id: Int, val hops: Int, val type: Int, val lat: Double, val lon: Double,
+        val uid: String = "", val name: String = ""
+    ) {
+        val label: String get() = if (name.isBlank()) "Necunoscut" else "$name#$uid"
+    }
 
     interface Listener {
         fun onLocation(lat: Double, lon: Double)

@@ -34,13 +34,24 @@ class MeshForegroundService : Service() {
         private const val NOTIF_ID = 1
         private const val MANUFACTURER_ID = 0xFFFF
         private const val MAX_HOPS = 10
-        private const val PACKET_SIZE = 12   // ID(2) Hops(1) Tip(1) Lat(4) Lon(4)
+        // Pachet: ID(2) Hops(1) Tip(1) Lat(4) Lon(4) [UID(3) Poreclă(0-8)]  => 12 sau 15..23 bytes
+        private const val BASE_SIZE = 12
+        private const val HEADER_SIZE = 15
+        private const val MAX_SIZE = 23
         private const val KEEP_MS = 30 * 60 * 1000L
     }
 
-    private class Packet(val id: Int, val hops: Int, val type: Int, val lat: Float, val lon: Float) {
+    private class Packet(
+        val id: Int, val hops: Int, val type: Int, val lat: Float, val lon: Float,
+        val uid: String, val name: String
+    ) {
         val at = System.currentTimeMillis()
+        @Volatile var uploaded = false
+        @Volatile var uploading = false
     }
+
+    @Volatile private var ownUploading = false
+    private var lastOwnUpload = 0L
 
     private val handler = Handler(Looper.getMainLooper())
     private val relayQueue = LinkedHashMap<Int, Packet>()
@@ -70,13 +81,21 @@ class MeshForegroundService : Service() {
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val raw = result.scanRecord?.getManufacturerSpecificData(MANUFACTURER_ID) ?: return
-            if (raw.size != PACKET_SIZE) return
+            if (raw.size < BASE_SIZE || raw.size > MAX_SIZE || raw.size == 13 || raw.size == 14) return
             val buf = ByteBuffer.wrap(raw)
             val id = buf.short.toInt() and 0xFFFF
             val hops = buf.get().toInt() and 0xFF
             val type = buf.get().toInt() and 0xFF
             val lat = buf.float
             val lon = buf.float
+            var uid = ""
+            var name = ""
+            if (raw.size >= HEADER_SIZE) {
+                val u = ByteArray(3)
+                buf.get(u)
+                uid = Profile.bytesToUid(u)
+                name = String(raw, HEADER_SIZE, raw.size - HEADER_SIZE, Charsets.US_ASCII)
+            }
 
             if (MeshBus.sosActive && id == MeshBus.mySosId) return
             if (lat.isNaN() || lon.isNaN() || lat !in -90f..90f || lon !in -180f..180f) return
@@ -84,11 +103,11 @@ class MeshForegroundService : Service() {
             val known = relayQueue[id]
             if (known != null && known.hops <= hops + 1) return   // am deja o cale la fel de scurtă
 
-            if (hops + 1 <= MAX_HOPS) relayQueue[id] = Packet(id, hops + 1, type, lat, lon)
+            if (hops + 1 <= MAX_HOPS) relayQueue[id] = Packet(id, hops + 1, type, lat, lon, uid, name)
 
-            MeshBus.alert(MeshBus.Alert(id, hops, type, lat.toDouble(), lon.toDouble()), known == null)
-            MeshBus.status("ALARMĂ PRIMITĂ #$id (${MeshBus.TYPES.getOrElse(type) { "SOS" }})\nSalturi BT: $hops")
-            CloudGateway.upload(this@MeshForegroundService, id, type, lat.toDouble(), lon.toDouble(), hops)
+            val alert = MeshBus.Alert(id, hops, type, lat.toDouble(), lon.toDouble(), uid, name)
+            MeshBus.alert(alert, known == null)
+            MeshBus.status("ALARMĂ PRIMITĂ de la ${alert.label}\n#$id (${MeshBus.TYPES.getOrElse(type) { "SOS" }}) • salturi BT: $hops")
         }
     }
 
@@ -101,10 +120,31 @@ class MeshForegroundService : Service() {
 
             val list = ArrayList<Packet>()
             if (MeshBus.sosActive && MeshBus.myLat != 0.0) {
-                list.add(Packet(MeshBus.mySosId, 0, MeshBus.mySosType, MeshBus.myLat.toFloat(), MeshBus.myLon.toFloat()))
-                CloudGateway.upload(this@MeshForegroundService, MeshBus.mySosId, MeshBus.mySosType, MeshBus.myLat, MeshBus.myLon, 0)
+                list.add(Packet(MeshBus.mySosId, 0, MeshBus.mySosType, MeshBus.myLat.toFloat(), MeshBus.myLon.toFloat(), Profile.uid, Profile.name))
+                // SOS-ul propriu: urcat în cloud la fiecare minut, cât timp există internet
+                if (CloudGateway.enabled && !ownUploading && now - lastOwnUpload > 60_000 && CloudGateway.hasInternet(this@MeshForegroundService)) {
+                    ownUploading = true
+                    CloudGateway.upload(this@MeshForegroundService, MeshBus.mySosId, MeshBus.mySosType, MeshBus.myLat, MeshBus.myLon, 0, Profile.name, Profile.uid) { ok ->
+                        if (ok) lastOwnUpload = System.currentTimeMillis()
+                        ownUploading = false
+                    }
+                }
             }
             list.addAll(relayQueue.values)
+
+            // PUNTE: alarmele primite prin Bluetooth se urcă în cloud imediat ce există internet (chiar slab).
+            // Dacă urcarea eșuează, se reîncearcă la următorul ciclu (3 s) până reușește.
+            if (CloudGateway.enabled && CloudGateway.hasInternet(this@MeshForegroundService)) {
+                for (p in relayQueue.values) {
+                    if (!p.uploaded && !p.uploading) {
+                        p.uploading = true
+                        CloudGateway.upload(this@MeshForegroundService, p.id, p.type, p.lat.toDouble(), p.lon.toDouble(), p.hops - 1, p.name, p.uid) { ok ->
+                            if (ok) p.uploaded = true
+                            p.uploading = false
+                        }
+                    }
+                }
+            }
 
             if (list.isNotEmpty()) {
                 rotateIndex = (rotateIndex + 1) % list.size
@@ -121,6 +161,7 @@ class MeshForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Profile.load(this)
         createChannel()
         val notif = buildNotification()
         try {
@@ -198,12 +239,15 @@ class MeshForegroundService : Service() {
     @SuppressLint("MissingPermission")
     private fun advertise(p: Packet) {
         stopAdvertising()
-        val buf = ByteBuffer.allocate(PACKET_SIZE)
+        val nameBytes = p.name.toByteArray(Charsets.US_ASCII).take(8).toByteArray()
+        val buf = ByteBuffer.allocate(HEADER_SIZE + nameBytes.size)
         buf.putShort(p.id.toShort())
         buf.put(p.hops.toByte())
         buf.put(p.type.toByte())
         buf.putFloat(p.lat)
         buf.putFloat(p.lon)
+        buf.put(Profile.uidToBytes(p.uid.ifEmpty { "AAAA" }))
+        buf.put(nameBytes)
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
