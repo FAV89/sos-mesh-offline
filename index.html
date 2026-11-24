@@ -132,7 +132,6 @@ if(navigator.geolocation){
         enableHighAccuracy:true,
         maximumAge:5000
       });
-}
   } else status('Acest browser nu are GPS.');
   $('sos').onclick=function(){
     if(!me){status('Aștept poziția GPS…');return}
