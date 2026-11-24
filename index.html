@@ -37,6 +37,44 @@
             <ul id="list">            
             </ul>        
         </details>
+<button id="centerBtn"
+style="
+position:fixed;
+top:165px;
+left:10px;
+width:40px;
+height:40px;
+display:flex;
+align-items:center;
+justify-content:center;
+border-radius:4px;
+border:1px solid #aaa;
+background:white;
+font-size:22px;
+z-index:9999;
+cursor:pointer;
+padding:0;">
+🎯
+</button>
+<button id="fitBtn"
+style="
+position:fixed;
+top:215px;
+left:10px;
+width:40px;
+height:40px;
+display:flex;
+align-items:center;
+justify-content:center;
+border-radius:4px;
+border:1px solid #aaa;
+background:white;
+font-size:22px;
+z-index:9999;
+cursor:pointer;
+padding:0;">
+⤢
+</button>
 <script>
 /* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
@@ -133,13 +171,46 @@ if(navigator.geolocation){
         maximumAge:5000
       });
   } else status('Acest browser nu are GPS.');
+  // ---- Profil (poreclă + ID unic), ca în aplicație ----
+  function getProfile(){
+    var p={}; try{p=JSON.parse(localStorage.getItem('sos-profile')||'{}')}catch(e){}
+    if(!p.uid){var A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',u='';for(var i=0;i<4;i++)u+=A[Math.floor(Math.random()*32)];p.uid=u}
+    if(!p.name||p.name.length<3){
+      var n=(window.prompt('Poreclă (3-8 litere/cifre, fără diacritice):','')||'').replace(/[^A-Za-z0-9]/g,'').slice(0,8);
+      if(n.length<3) return null;
+      p.name=n;
+    }
+    try{localStorage.setItem('sos-profile',JSON.stringify(p))}catch(e){}
+    return p;
+  }
+  function cloudUrl(id){return DB_URL.replace(/\/$/,'')+'/sos/'+id+'.json'}
+  function putSos(){
+    if(!DB_URL||!me||!sosOn) return;
+    var p=getProfile(); if(!p) return;
+    fetch(cloudUrl(sosId),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      sosId:sosId,type:'SOS GENERAL',lat:me.lat,lon:me.lon,hops:0,name:p.name,uid:p.uid,timestamp:Math.floor(Date.now()/1000)
+    })}).catch(function(){});
+  }
+  setInterval(putSos,30000);
+
   $('sos').onclick=function(){
     if(!me){status('Aștept poziția GPS…');return}
-    sosOn=!sosOn;
+    if(!sosOn){
+      var p=getProfile();
+      if(!p){status('Ai nevoie de o poreclă de minim 3 caractere.');return}
+      sosOn=true;
+      sosId=Math.floor(Math.random()*32000)+1;
+      addAlert(sosId,me.lat,me.lon,false);
+      putSos();
+      status('SOS ACTIV #'+sosId+' ('+p.name+'#'+p.uid+'). Se trimite în cloud și apare în aplicații cu internet.');
+    } else {
+      sosOn=false;
+      if(DB_URL) fetch(cloudUrl(sosId),{method:'DELETE'}).catch(function(){});
+      if(alerts[sosId]) map.removeLayer(alerts[sosId]);
+      status('Alarma oprită.');
+    }
     this.classList.toggle('on',sosOn);
     this.textContent=sosOn?'OPREȘTE ALARMA SOS':'TRIMITE ALARMA SOS';
-    if(sosOn){sosId=Math.floor(Math.random()*32000)+1;addAlert(sosId,me.lat,me.lon,false);status('SOS ACTIV #'+sosId+'. Copiază sau trimite mesajul.')}
-    else{if(alerts[sosId])map.removeLayer(alerts[sosId]);status('Alarma oprită.')}
   };
   $('copy').onclick=function(){
     var t=sosText(); if(!t){status('Aștept poziția GPS…');return}
@@ -164,27 +235,31 @@ if(navigator.geolocation){
   function pollCloud(){
     if(!DB_URL) return;
     fetch(DB_URL.replace(/\/$/,'')+'/sos.json').then(function(r){return r.json()}).then(function(d){
-      if(!d) return;
+      d=d||{}; var seen={};
       var cutoff=Date.now()/1000-24*3600, n=0;
       Object.keys(d).forEach(function(k){
-        var a=d[k]; if(!a||typeof a.lat!=='number'||typeof a.lon!=='number'||a.timestamp<cutoff) return;
-        n++;
+        var a=d[k]; if(sosOn&&String(k)===String(sosId)) return; if(!a||typeof a.lat!=='number'||typeof a.lon!=='number'||a.timestamp<cutoff) return;
+        n++; seen[k]=1;
         if(cloudMarkers[k]) map.removeLayer(cloudMarkers[k]);
         cloudMarkers[k]=L.circleMarker([a.lat,a.lon],{radius:11,color:'#fff',weight:3,fillColor:'#e5393b',fillOpacity:1})
           .bindPopup((a.name?'<b>'+esc(a.name)+'#'+esc(a.uid||'')+'</b><br>':'')+'SOS #'+esc(a.sosId)+' — '+esc(a.type)+'<br>salturi: '+esc(a.hops)+'<br>'+new Date(a.timestamp*1000).toLocaleString()).addTo(map);
       });
+      Object.keys(cloudMarkers).forEach(function(k){if(!seen[k]){map.removeLayer(cloudMarkers[k]);delete cloudMarkers[k]}});
       if(n) status('SOS-uri active (24h): '+n);
     }).catch(function(){});
   }
   pollCloud(); setInterval(pollCloud,15000);
-  document.getElementById('centerBtn').onclick = function() {
-    if(currentLat && currentLon){
-        map.setView(
-            [currentLat,currentLon],
-            18
-        );
-    }
-};
+  $('centerBtn').onclick=function(){
+    if(me) map.setView([me.lat,me.lon],18); else status('Aștept poziția GPS…');
+  };
+  $('fitBtn').onclick=function(){
+    var pts=[];
+    if(me) pts.push([me.lat,me.lon]);
+    Object.keys(cloudMarkers).forEach(function(k){pts.push(cloudMarkers[k].getLatLng())});
+    Object.keys(alerts).forEach(function(k){pts.push(alerts[k].getLatLng())});
+    if(pts.length>1) map.fitBounds(pts,{padding:[40,40],maxZoom:17});
+    else if(pts.length===1) map.setView(pts[0],16);
+  };
   load().forEach(function(a){addAlert(a.id,a.lat,a.lon,false)});
   renderList();
 })();
@@ -194,25 +269,6 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./service-worker.js');
 }
 		 
-</script> 	          
-      <button id="centerBtn"
-style="
-position:fixed;
-top:165px;
-left:10px;
-width:40px;
-height:40px;
-display:flex;
-align-items:center;
-justify-content:center;
-border-radius:4px;
-border:1px solid #aaa;
-background:white;
-font-size:22px;
-z-index:9999;
-cursor:pointer;
-padding:0;">
-🎯
-</button>
+</script>
     </body>
 </html>
