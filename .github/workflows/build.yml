@@ -5,6 +5,9 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,32 +20,6 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-
-    - name: Generate Clean AndroidManifest
-      run: |
-        mkdir -p app/src/main
-        printf '<?xml version="1.0" encoding="utf-8"?>\n' > app/src/main/AndroidManifest.xml
-        printf '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n' >> app/src/main/AndroidManifest.xml
-        printf '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n' >> app/src/main/AndroidManifest.xml
-        printf '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n' >> app/src/main/AndroidManifest.xml
-        printf '    <uses-permission android:name="android.permission.BLUETOOTH" />\n' >> app/src/main/AndroidManifest.xml
-        printf '    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />\n' >> app/src/main/AndroidManifest.xml
-        printf '    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />\n' >> app/src/main/AndroidManifest.xml
-        printf '    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />\n' >> app/src/main/AndroidManifest.xml
-        printf '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n' >> app/src/main/AndroidManifest.xml
-        printf '    <uses-permission android:name="android.permission.INTERNET" />\n' >> app/src/main/AndroidManifest.xml
-        printf '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n' >> app/src/main/AndroidManifest.xml
-        printf '    <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />\n' >> app/src/main/AndroidManifest.xml
-        printf '    <uses-feature android:name="android.hardware.location.gps" android:required="true" />\n' >> app/src/main/AndroidManifest.xml
-        printf '    <application android:allowBackup="true" android:label="SOS Mesh Offline" android:supportsRtl="true" android:theme="@style/Theme.AppCompat.Light.NoActionBar">\n' >> app/src/main/AndroidManifest.xml
-        printf '        <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="portrait">\n' >> app/src/main/AndroidManifest.xml
-        printf '            <intent-filter>\n' >> app/src/main/AndroidManifest.xml
-        printf '                <action android:name="android.intent.action.MAIN" />\n' >> app/src/main/AndroidManifest.xml
-        printf '                <category android:name="android.intent.category.LAUNCHER" />\n' >> app/src/main/AndroidManifest.xml
-        printf '            </intent-filter>\n' >> app/src/main/AndroidManifest.xml
-        printf '        </activity>\n' >> app/src/main/AndroidManifest.xml
-        printf '    </application>\n' >> app/src/main/AndroidManifest.xml
-        printf '</manifest>\n' >> app/src/main/AndroidManifest.xml
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
