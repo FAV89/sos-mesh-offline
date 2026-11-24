@@ -171,7 +171,7 @@ if(navigator.geolocation){
         n++;
         if(cloudMarkers[k]) map.removeLayer(cloudMarkers[k]);
         cloudMarkers[k]=L.circleMarker([a.lat,a.lon],{radius:11,color:'#fff',weight:3,fillColor:'#e5393b',fillOpacity:1})
-          .bindPopup('SOS #'+esc(a.sosId)+' — '+esc(a.type)+'<br>salturi: '+esc(a.hops)+'<br>'+new Date(a.timestamp*1000).toLocaleString()).addTo(map);
+          .bindPopup((a.name?'<b>'+esc(a.name)+'#'+esc(a.uid||'')+'</b><br>':'')+'SOS #'+esc(a.sosId)+' — '+esc(a.type)+'<br>salturi: '+esc(a.hops)+'<br>'+new Date(a.timestamp*1000).toLocaleString()).addTo(map);
       });
       if(n) status('SOS-uri active (24h): '+n);
     }).catch(function(){});
