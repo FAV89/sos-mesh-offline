@@ -726,6 +726,7 @@ li{padding:8px;border-bottom:1px solid var(--line);font-size:14px;cursor:pointer
   var me=null, sosOn=false, sosId=Math.floor(Math.random()*32000)+1;
   var $=function(i){return document.getElementById(i)};
   var map=L.map('map',{zoomControl:true}).setView([47.6567,23.585],14);
+	var myMarker = null;
 
   // Hartă. Cheie CARTO gratuită: carto.com/basemaps/apikey. Dacă CARTO_KEY e goală, se folosește OpenStreetMap standard.
  var ATTR='&copy; OpenStreetMap contributors';
@@ -770,9 +771,36 @@ L.tileLayer(
   function status(t){$('status').textContent=t}
 
   if(navigator.geolocation){
+	  let currentLat = null;
+let currentLon = null;
     navigator.geolocation.watchPosition(function(p){
+		
       var first=!me;
       me={lat:p.coords.latitude,lon:p.coords.longitude};
+		currentLat = lat;
+		currentLon = lon;
+		if(!myMarker){
+
+    myMarker = L.circleMarker(
+        [lat,lon],
+        {
+            radius:8,
+            color:'#2196F3',
+            fillColor:'#2196F3',
+            fillOpacity:1
+        }
+    ).addTo(map);
+
+}else{
+
+    myMarker.setLatLng(
+        [lat,lon]
+    );
+		map.panTo(
+    [lat,lon]
+);
+
+}
       meMarker.setLatLng([me.lat,me.lon]); if(first){meMarker.addTo(map);map.setView([me.lat,me.lon],16)}
       status(sosOn?('SOS ACTIV #'+sosId+' — '+sosText().slice(-20)):('Poziție: '+me.lat.toFixed(5)+', '+me.lon.toFixed(5)));
     },function(){status('Nu am acces la GPS. Pornește locația și permite accesul.')},
@@ -837,6 +865,38 @@ L.tileLayer(
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./service-worker.js');
 }
+document.getElementById('centerBtn').onclick = function() {
+
+    if(currentLat && currentLon){
+
+        map.setView(
+            [currentLat,currentLon],
+            18
+        );
+
+    }
+
+};
+		
 </script>
+	
+<button id="centerBtn"
+style="
+position:fixed;
+bottom:80px;
+right:15px;
+width:50px;
+height:50px;
+border-radius:50%;
+border:none;
+background:#2196F3;
+color:white;
+font-size:24px;
+z-index:9999;
+cursor:pointer;">
+📍
+
+		
+</button>
 </body>
 </html>
