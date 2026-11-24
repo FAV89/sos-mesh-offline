@@ -1,6 +1,7 @@
 package com.sos.meshoffline
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -15,17 +16,17 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
-import android.annotation.SuppressLint
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
-import android.text.InputFilter
-import android.text.InputType
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.InputFilter
+import android.text.InputType
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.*
@@ -34,16 +35,17 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.cachemanager.CacheManager
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.CopyrightOverlay
-import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Overlay
 import java.io.File
 
-/** Ecranul afișează harta, busola și controlează lanterna. Mesh-ul rulează în MeshForegroundService. */
+/** Ecranul: hartă, busolă, lanternă, profil, admin. Mesh-ul și cloud-ul rulează în MeshForegroundService. */
 class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener {
 
     private lateinit var map: MapView
@@ -55,16 +57,15 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
     private lateinit var compassText: TextView
     private lateinit var profileText: TextView
 
-    private var myMarker: Marker? = null
-    private val alertMarkers = HashMap<Int, Marker>()
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private fun dp(v: Float) = v * resources.displayMetrics.density
 
     // ----- Busolă -----
     private lateinit var sensorManager: SensorManager
-    private var azimuth = 0f        // grade față de nordul adevărat
+    private var azimuth = 0f
     private var hasAzimuth = false
 
     // ----- Lanternă Morse -----
-    private val uiHandler = Handler(Looper.getMainLooper())
     private var torchId: String? = null
     private var flashOn = false
     private var morseIndex = 0
@@ -74,7 +75,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             for (s in letter) { add(true to s * u); add(false to u) }
             add(false to 2 * u)
         }
-        add(false to 4 * u)   // pauză între repetări
+        add(false to 4 * u)
     }
     private val morseRunner = object : Runnable {
         override fun run() {
@@ -86,7 +87,22 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         }
     }
 
-    // Săgeată care arată direcția spre cea mai apropiată alarmă
+    // ----- Animație (unde de șoc) -----
+    private var animating = false
+    private val animRunner = object : Runnable {
+        override fun run() {
+            if (needAnim()) {
+                map.invalidate()
+                uiHandler.postDelayed(this, 66)
+            } else animating = false
+        }
+    }
+    private fun needAnim() = MeshBus.sosActive || MeshBus.alerts.isNotEmpty()
+    private fun ensureAnim() {
+        if (!animating && needAnim()) { animating = true; uiHandler.post(animRunner) }
+    }
+
+    // Săgeata busolei
     private class ArrowView(ctx: Context) : View(ctx) {
         var angle = 0f
         var active = false
@@ -110,6 +126,86 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         }
     }
 
+    /**
+     * Desenează tot pe hartă: eu (albastru, roșu când emit SOS), alți utilizatori (albastru = aplicație,
+     * turcoaz = web), alarme (roșu cu unde de șoc), toate cu porecla deasupra.
+     */
+    private inner class PeopleOverlay : Overlay() {
+        private val dot = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(3f) }
+        private val txt = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = dp(13f); textAlign = Paint.Align.CENTER; color = Color.WHITE; isFakeBoldText = true }
+        private val txtStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = dp(13f); textAlign = Paint.Align.CENTER; style = Paint.Style.STROKE
+            strokeWidth = dp(3.5f); color = Color.argb(220, 0, 0, 0); isFakeBoldText = true
+        }
+        private class Hit(val x: Float, val y: Float, val alert: MeshBus.Alert?, val person: MeshBus.Person?)
+        private val hits = ArrayList<Hit>()
+
+        private val RED = Color.parseColor("#E5393B")
+        private val BLUE = Color.parseColor("#2F7DE1")
+        private val CYAN = Color.parseColor("#00ACC1")
+
+        private fun point(c: Canvas, x: Float, y: Float, color: Int, label: String, pulse: Boolean, now: Long, big: Boolean) {
+            val r = dp(if (big) 9f else 7f)
+            if (pulse) {
+                for (i in 0..2) {   // 3 unde de șoc care se extind și dispar, repetate continuu
+                    val t = ((now % 2400L) / 2400f + i / 3f) % 1f
+                    ring.color = color
+                    ring.alpha = ((1f - t) * 180).toInt()
+                    c.drawCircle(x, y, r + t * dp(70f), ring)
+                }
+            }
+            dot.color = Color.WHITE; c.drawCircle(x, y, r + dp(2f), dot)
+            dot.color = color; c.drawCircle(x, y, r, dot)
+            if (label.isNotEmpty()) {
+                val ty = y - r - dp(8f)
+                c.drawText(label, x, ty, txtStroke)
+                c.drawText(label, x, ty, txt)
+            }
+        }
+
+        override fun draw(c: Canvas, mapView: MapView, shadow: Boolean) {
+            if (shadow) return
+            val proj = mapView.projection
+            val now = System.currentTimeMillis()
+            hits.clear()
+
+            for (p in MeshBus.people.values) {          // alți utilizatori (activi în ultimele 10 min)
+                if (p.uid == Profile.uid || now / 1000 - p.tsSec > 600) continue
+                val pt = proj.toPixels(GeoPoint(p.lat, p.lon), null)
+                point(c, pt.x.toFloat(), pt.y.toFloat(), if (p.src == "web") CYAN else BLUE, p.name, false, now, false)
+                hits.add(Hit(pt.x.toFloat(), pt.y.toFloat(), null, p))
+            }
+            for (a in MeshBus.alerts.values) {           // alarme
+                if (a.age(now) >= MeshBus.MAX_AGE_MIN) continue
+                val pt = proj.toPixels(GeoPoint(a.lat, a.lon), null)
+                point(c, pt.x.toFloat(), pt.y.toFloat(), RED, a.label, true, now, true)
+                hits.add(Hit(pt.x.toFloat(), pt.y.toFloat(), a, null))
+            }
+            if (MeshBus.myLat != 0.0) {                   // eu
+                val pt = proj.toPixels(GeoPoint(MeshBus.myLat, MeshBus.myLon), null)
+                val sos = MeshBus.sosActive
+                point(c, pt.x.toFloat(), pt.y.toFloat(), if (sos) RED else BLUE,
+                    if (Profile.name.isNotEmpty()) "Tu: ${Profile.name}" else "Tu", sos, now, true)
+            }
+        }
+
+        override fun onSingleTapConfirmed(e: MotionEvent, mapView: MapView): Boolean {
+            var best: Hit? = null
+            var bestD = dp(44f)
+            for (h in hits) {
+                val d = Math.hypot((h.x - e.x).toDouble(), (h.y - e.y).toDouble()).toFloat()
+                if (d < bestD) { bestD = d; best = h }
+            }
+            val h = best ?: return false
+            if (h.alert != null) showAlertDialog(h.alert)
+            else h.person?.let {
+                Toast.makeText(this@MainActivity, "${it.name}#${it.uid} (${if (it.src == "web") "web" else "aplicație"})", Toast.LENGTH_SHORT).show()
+            }
+            return true
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -125,7 +221,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setupUI()
         checkPermissions()
-        if (Profile.name.length < 3) showNameDialog(true)
+        if (Profile.name.length < 3) showProfileDialog(true)
     }
 
     private fun setupUI() {
@@ -139,22 +235,20 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             textSize = 14f
             setPadding(24, 20, 24, 0)
             gravity = Gravity.CENTER
-            setOnClickListener { showNameDialog(false) }   // atingere = schimbă porecla
+            setOnClickListener { showProfileDialog(false) }
         }
-        refreshProfile()
 
         statusText = TextView(this).apply {
             text = MeshBus.status
             setTextColor(Color.WHITE)
             textSize = 14f
-            setPadding(24, 24, 24, 8)
+            setPadding(24, 8, 24, 8)
             gravity = Gravity.CENTER
         }
 
-        // Rând busolă: săgeată + text distanță/azimut
         arrow = ArrowView(this)
         compassText = TextView(this).apply {
-            text = "Busolă: nicio alarmă primită"
+            text = "Busolă: nicio alarmă activă"
             setTextColor(Color.WHITE)
             textSize = 15f
             gravity = Gravity.CENTER_VERTICAL
@@ -162,8 +256,8 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         }
         val compassRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(16, 8, 16, 8)
-            addView(arrow, LinearLayout.LayoutParams(160, 160))
+            setPadding(16, 4, 16, 4)
+            addView(arrow, LinearLayout.LayoutParams(150, 150))
             addView(compassText, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
         }
 
@@ -186,6 +280,32 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             controller.setZoom(15.0)
             controller.setCenter(GeoPoint(47.6567, 23.5850))
             overlays.add(CopyrightOverlay(this@MainActivity))
+            overlays.add(PeopleOverlay())
+        }
+
+        fun mapButton(label: String, onClick: () -> Unit) = Button(this).apply {
+            text = label
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#D91F3A5F"))
+            setPadding(20, 10, 20, 10)
+            minHeight = 0; minimumHeight = 0
+            setOnClickListener { onClick() }
+        }
+        val fab = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val lp = { LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 10 } }
+            addView(mapButton("📍 EU") { centerOnMe() })
+            addView(mapButton("⤢ TOATE") { fitAll() }, lp())
+            addView(mapButton("⬇ HARTĂ") { downloadMap() }, lp())
+            addView(mapButton("🔒 ADMIN") { showAdminDialog() }, lp())
+        }
+        val mapBox = FrameLayout(this).apply {
+            addView(map, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            addView(fab, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.END or Gravity.BOTTOM
+            ).apply { setMargins(0, 0, 16, 16) })
         }
 
         typeSpinner = Spinner(this).apply {
@@ -208,39 +328,174 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             addView(sosButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f))
             addView(flashButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
-        refreshButtons()
 
         layout.addView(profileText)
         layout.addView(statusText)
         layout.addView(compassRow)
-        // Butoane peste hartă: "EU" = centrează pe locația mea, "TOATE" = arată toate alarmele + pe mine
-        fun mapButton(label: String, onClick: () -> Unit) = Button(this).apply {
-            text = label
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#CC1F3A5F"))
-            setPadding(24, 16, 24, 16)
-            setOnClickListener { onClick() }
-        }
-        val fab = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(mapButton("📍 EU") { centerOnMe() })
-            addView(mapButton("⤢ TOATE") { fitAll() },
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 12 })
-        }
-        val mapBox = FrameLayout(this).apply {
-            addView(map, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-            addView(fab, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.END or Gravity.BOTTOM
-            ).apply { setMargins(0, 0, 20, 20) })
-        }
         layout.addView(mapBox, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         layout.addView(typeSpinner)
         layout.addView(buttons)
         setContentView(layout)
+        refreshProfile()
+        refreshButtons()
     }
 
+    // ---------- Profil ----------
+    private fun refreshProfile() {
+        profileText.text = if (Profile.name.length >= 3)
+            "Tu: ${Profile.label()}" + (if (Profile.cloudReady) "  •  grup ${Profile.group}" else "  •  doar Bluetooth") + "  (atinge)"
+        else "Setează-ți porecla"
+    }
+
+    private fun showProfileDialog(force: Boolean) {
+        val pad = dp(20f).toInt()
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad / 2, pad, 0) }
+        val nameIn = EditText(this).apply {
+            hint = "Poreclă (3-8 litere/cifre)"
+            setText(Profile.name)
+            filters = arrayOf(InputFilter.LengthFilter(8))
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        val groupIn = EditText(this).apply {
+            hint = "Cod grup (6-20 litere/cifre), opțional"
+            setText(Profile.group)
+            filters = arrayOf(InputFilter.LengthFilter(20))
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        val presenceCb = CheckBox(this).apply { text = "Arată-mă pe hartă celorlalți din grup"; isChecked = Profile.presence }
+        val note = TextView(this).apply {
+            text = "ID-ul tău unic: ${Profile.uid}\nCodul de grup: doar cei cu același cod se văd în cloud (aplicație + web). Fără cod funcționează doar Bluetooth."
+            textSize = 12f
+            setPadding(0, 16, 0, 0)
+        }
+        box.addView(nameIn); box.addView(groupIn); box.addView(presenceCb); box.addView(note)
+
+        val b = AlertDialog.Builder(this).setTitle("Profilul tău").setView(box).setCancelable(!force)
+            .setPositiveButton("Salvează", null)
+        if (!force) b.setNegativeButton("Anulează", null)
+        val d = b.create()
+        d.show()
+        d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val n = Profile.sanitizeName(nameIn.text.toString())
+            val g = Profile.sanitizeGroup(groupIn.text.toString())
+            when {
+                n.length < 3 -> nameIn.error = "Minim 3 caractere (litere/cifre, fără diacritice)"
+                g.isNotEmpty() && g.length < 6 -> groupIn.error = "Minim 6 caractere, sau lasă gol"
+                else -> {
+                    val hadPresence = Profile.presence
+                    Profile.save(this, n, g, presenceCb.isChecked)
+                    if (hadPresence && !presenceCb.isChecked) CloudGateway.removePresence(this)
+                    refreshProfile()
+                    d.dismiss()
+                }
+            }
+        }
+    }
+
+    // ---------- Butoane pe hartă ----------
+    private fun centerOnMe() {
+        if (MeshBus.myLat == 0.0) { Toast.makeText(this, "Aștept fixarea GPS...", Toast.LENGTH_SHORT).show(); return }
+        map.controller.setZoom(18.0)
+        map.controller.animateTo(GeoPoint(MeshBus.myLat, MeshBus.myLon))
+    }
+
+    private fun fitAll() {
+        val now = System.currentTimeMillis()
+        val pts = ArrayList<GeoPoint>()
+        if (MeshBus.myLat != 0.0) pts.add(GeoPoint(MeshBus.myLat, MeshBus.myLon))
+        MeshBus.alerts.values.forEach { if (it.age(now) < MeshBus.MAX_AGE_MIN) pts.add(GeoPoint(it.lat, it.lon)) }
+        MeshBus.people.values.forEach { if (it.uid != Profile.uid && now / 1000 - it.tsSec <= 600) pts.add(GeoPoint(it.lat, it.lon)) }
+        if (pts.isEmpty()) { Toast.makeText(this, "Nu există poziții de afișat.", Toast.LENGTH_SHORT).show(); return }
+        val box = BoundingBox.fromGeoPoints(pts)
+        if (pts.size == 1 || (box.latitudeSpan < 1e-5 && box.longitudeSpan < 1e-5)) {
+            map.controller.setZoom(17.0)
+            map.controller.animateTo(pts[0])
+        } else {
+            map.zoomToBoundingBox(box.increaseByScale(1.4f), true)
+        }
+    }
+
+    /** Descarcă dalele hărții pentru zona vizibilă, ca să se vadă și fără internet. */
+    private fun downloadMap() {
+        val box = map.boundingBox
+        val zMin = 12
+        val zMax = 17
+        val cm = CacheManager(map)
+        val count = cm.possibleTilesInArea(box, zMin, zMax)
+        if (count > 3000) {
+            Toast.makeText(this, "Zona e prea mare ($count dale). Apropie harta și încearcă din nou.", Toast.LENGTH_LONG).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Hartă offline")
+            .setMessage("Descarc zona vizibilă (zoom $zMin–$zMax): $count dale, aprox. ${count * 15 / 1024 + 1} MB. Ai nevoie de internet.")
+            .setPositiveButton("Descarcă") { _, _ ->
+                try {
+                    cm.downloadAreaAsync(this, box, zMin, zMax, object : CacheManager.CacheManagerCallback {
+                        override fun onTaskComplete() { runOnUiThread { Toast.makeText(this@MainActivity, "Harta offline e gata.", Toast.LENGTH_LONG).show() } }
+                        override fun onTaskFailed(errors: Int) { runOnUiThread { Toast.makeText(this@MainActivity, "Descărcare incompletă ($errors erori).", Toast.LENGTH_LONG).show() } }
+                        override fun updateProgress(progress: Int, currentZoomLevel: Int, zoomMin: Int, zoomMax: Int) {}
+                        override fun downloadStarted() {}
+                        override fun setPossibleTilesInArea(total: Int) {}
+                    })
+                    Toast.makeText(this, "Descarc harta...", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Nu pot descărca: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("Anulează", null)
+            .show()
+    }
+
+    private fun showAdminDialog() {
+        if (!CloudGateway.enabled) {
+            Toast.makeText(this, "Admin: setează întâi codul de grup (atinge profilul).", Toast.LENGTH_LONG).show()
+            return
+        }
+        val input = EditText(this).apply {
+            hint = "Cod admin"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setPadding(dp(20f).toInt(), dp(16f).toInt(), dp(20f).toInt(), dp(16f).toInt())
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Admin: șterge toate alarmele")
+            .setMessage("Șterge alarmele active din grupul ${Profile.group}. Cine emite încă un SOS îl va reporni.")
+            .setView(input)
+            .setPositiveButton("ȘTERGE") { _, _ ->
+                val code = input.text.toString()
+                if (code.isBlank()) return@setPositiveButton
+                CloudGateway.adminClear(this, code) { ok, msg ->
+                    runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() }
+                }
+            }
+            .setNegativeButton("Anulează", null)
+            .show()
+    }
+
+    private fun showAlertDialog(a: MeshBus.Alert) {
+        val now = System.currentTimeMillis()
+        val dist = if (MeshBus.myLat != 0.0) {
+            val r = FloatArray(1)
+            Location.distanceBetween(MeshBus.myLat, MeshBus.myLon, a.lat, a.lon, r)
+            if (r[0] >= 1000f) "%.2f km".format(r[0] / 1000f) else "${r[0].toInt()} m"
+        } else "necunoscută"
+        val d = AlertDialog.Builder(this)
+            .setTitle("SOS: ${a.label}")
+            .setMessage("${a.typeName}\nDistanță: $dist\nVechime: ${a.age(now)} min\nSalturi: ${a.hops}\n%.5f, %.5f".format(a.lat, a.lon))
+            .setNegativeButton("Închide", null)
+        if (CloudGateway.enabled && Profile.name.length >= 3) {
+            d.setPositiveButton("VIN SPRE TINE") { _, _ ->
+                CloudGateway.respond(this, a.id) { ok ->
+                    runOnUiThread {
+                        Toast.makeText(this, if (ok) "Victima vede că vii spre ea." else "Nu am putut trimite (fără internet?).", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+        d.show()
+    }
+
+    // ---------- SOS ----------
     private fun refreshButtons() {
         if (MeshBus.sosActive) {
             sosButton.text = "OPREȘTE SOS"
@@ -262,68 +517,8 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         }
     }
 
-    // ----- SOS -----
-    private fun centerOnMe() {
-        if (MeshBus.myLat == 0.0) {
-            Toast.makeText(this, "Aștept fixarea GPS...", Toast.LENGTH_SHORT).show()
-            return
-        }
-        map.controller.setZoom(18.0)
-        map.controller.animateTo(GeoPoint(MeshBus.myLat, MeshBus.myLon))
-    }
-
-    private fun fitAll() {
-        val pts = ArrayList<GeoPoint>()
-        if (MeshBus.myLat != 0.0) pts.add(GeoPoint(MeshBus.myLat, MeshBus.myLon))
-        MeshBus.alerts.values.forEach { pts.add(GeoPoint(it.lat, it.lon)) }
-        if (pts.isEmpty()) {
-            Toast.makeText(this, "Nu există poziții de afișat.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val box = BoundingBox.fromGeoPoints(pts)
-        if (pts.size == 1 || (box.latitudeSpan < 1e-5 && box.longitudeSpan < 1e-5)) {
-            map.controller.setZoom(17.0)
-            map.controller.animateTo(pts[0])
-        } else {
-            map.zoomToBoundingBox(box.increaseByScale(1.4f), true)
-        }
-    }
-
-    private fun refreshProfile() {
-        profileText.text = if (Profile.name.length >= 3) "Tu: ${Profile.label()}  (atinge ca să schimbi)" else "Setează-ți porecla"
-    }
-
-    private fun showNameDialog(force: Boolean) {
-        val input = EditText(this).apply {
-            hint = "Poreclă (3-8 litere/cifre)"
-            setText(Profile.name)
-            filters = arrayOf(InputFilter.LengthFilter(8))
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            setPadding(48, 32, 48, 32)
-        }
-        val b = AlertDialog.Builder(this)
-            .setTitle("Cine ești?")
-            .setMessage("Porecla ta e vizibilă celorlalți. ID-ul tău unic: ${Profile.uid}\n(doar litere și cifre, fără diacritice)")
-            .setView(input)
-            .setCancelable(!force)
-            .setPositiveButton("Salvează", null)
-        if (!force) b.setNegativeButton("Anulează", null)
-        val d = b.create()
-        d.show()
-        d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val n = Profile.sanitizeName(input.text.toString())
-            if (n.length < 3) {
-                input.error = "Minim 3 caractere (litere sau cifre, fără diacritice)"
-            } else {
-                Profile.setName(this, n)
-                refreshProfile()
-                d.dismiss()
-            }
-        }
-    }
-
     private fun toggleSos() {
-        if (Profile.name.length < 3) { showNameDialog(true); return }
+        if (Profile.name.length < 3) { showProfileDialog(true); return }
         if (!MeshBus.sosActive && MeshBus.myLat == 0.0) {
             Toast.makeText(this, "Așteaptă fixarea semnalului GPS!", Toast.LENGTH_SHORT).show()
             return
@@ -339,9 +534,11 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         }
         startService(i)
         refreshButtons()
+        map.invalidate()
+        ensureAnim()
     }
 
-    // ----- Lanternă -----
+    // ---------- Lanternă ----------
     private fun findTorch() {
         try {
             val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -373,7 +570,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         setTorch(false)
     }
 
-    // ----- Permisiuni -----
+    // ---------- Permisiuni ----------
     private fun neededPermissions(): List<String> {
         val p = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -417,9 +614,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
     private val localListener = object : LocationListener {
         override fun onLocationChanged(loc: Location) {
             MeshBus.location(loc.latitude, loc.longitude)
-            if (!MeshBus.sosActive) {
-                MeshBus.status("Poziție: %.5f, %.5f".format(loc.latitude, loc.longitude))
-            }
+            if (!MeshBus.sosActive) MeshBus.status("Poziție: %.5f, %.5f".format(loc.latitude, loc.longitude))
         }
         @Deprecated("Deprecated in Java")
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
@@ -435,10 +630,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             locationManager = lm
             var any = false
             for (prov in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
-                if (lm.isProviderEnabled(prov)) {
-                    lm.requestLocationUpdates(prov, 2000L, 1f, localListener)
-                    any = true
-                }
+                if (lm.isProviderEnabled(prov)) { lm.requestLocationUpdates(prov, 2000L, 1f, localListener); any = true }
             }
             if (!any) MeshBus.status("Locația e oprită în telefon. Pornește GPS-ul!")
             (lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
@@ -448,23 +640,24 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         }
     }
 
-    // ----- Busolă: calcul -----
+    // ---------- Busolă ----------
     private fun updateCompass() {
-        if (MeshBus.myLat == 0.0 || MeshBus.alerts.isEmpty()) {
+        val now = System.currentTimeMillis()
+        val live = MeshBus.alerts.values.filter { it.age(now) < MeshBus.MAX_AGE_MIN }
+        if (MeshBus.myLat == 0.0 || live.isEmpty()) {
             arrow.active = false; arrow.invalidate()
-            compassText.text = "Busolă: nicio alarmă primită"
+            compassText.text = "Busolă: nicio alarmă activă"
             return
         }
-        var best: MeshBus.Alert? = null
-        var bestDist = Float.MAX_VALUE
         val r = FloatArray(2)
-        for (a in MeshBus.alerts.values) {
+        var best = live[0]
+        var bestDist = Float.MAX_VALUE
+        for (a in live) {
             Location.distanceBetween(MeshBus.myLat, MeshBus.myLon, a.lat, a.lon, r)
             if (r[0] < bestDist) { bestDist = r[0]; best = a }
         }
-        val a = best ?: return
-        Location.distanceBetween(MeshBus.myLat, MeshBus.myLon, a.lat, a.lon, r)
-        val bearing = (r[1] + 360f) % 360f   // azimut către victimă, 0..360
+        Location.distanceBetween(MeshBus.myLat, MeshBus.myLon, best.lat, best.lon, r)
+        val bearing = (r[1] + 360f) % 360f
 
         arrow.active = hasAzimuth
         arrow.angle = ((bearing - azimuth) + 360f) % 360f
@@ -473,7 +666,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         val dist = if (bestDist >= 1000f) "%.2f km".format(bestDist / 1000f) else "${bestDist.toInt()} m"
         val dirs = arrayOf("N", "NE", "E", "SE", "S", "SV", "V", "NV")
         val dir = dirs[((bearing + 22.5f) / 45f).toInt() % 8]
-        compassText.text = "${a.label} • SOS #${a.id}\n$dist • ${bearing.toInt()}° $dir" +
+        compassText.text = "${best.label} • SOS #${best.id}\n$dist • ${bearing.toInt()}° $dir" +
             if (hasAzimuth) "" else "\n(busola se calibrează...)"
     }
 
@@ -483,12 +676,12 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         SensorManager.getRotationMatrixFromVector(rot, e.values)
         SensorManager.getOrientation(rot, ori)
         var az = Math.toDegrees(ori[0].toDouble()).toFloat()
-        if (MeshBus.myLat != 0.0) {   // corecție declinație magnetică → nord adevărat
+        if (MeshBus.myLat != 0.0) {
             az += GeomagneticField(MeshBus.myLat.toFloat(), MeshBus.myLon.toFloat(), 0f, System.currentTimeMillis()).declination
         }
         az = (az + 360f) % 360f
         if (!hasAzimuth) { azimuth = az; hasAzimuth = true }
-        else {   // netezire pe cerc
+        else {
             var d = az - azimuth
             if (d > 180f) d -= 360f
             if (d < -180f) d += 360f
@@ -499,43 +692,27 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
-    // ----- MeshBus.Listener -----
+    // ---------- MeshBus.Listener ----------
+    private var centeredOnce = false
+
     override fun onLocation(lat: Double, lon: Double) {
-        val p = GeoPoint(lat, lon)
-        if (myMarker == null) {
-            myMarker = Marker(map).apply {
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                title = "Locația mea"
-            }
-            map.overlays.add(myMarker)
-            map.controller.animateTo(p)
+        if (!centeredOnce) {
+            centeredOnce = true
+            map.controller.setCenter(GeoPoint(lat, lon))
         }
-        myMarker?.position = p
         map.invalidate()
         updateCompass()
     }
 
-    override fun onAlert(a: MeshBus.Alert, isNew: Boolean) {
-        val p = GeoPoint(a.lat, a.lon)
-        val m = alertMarkers.getOrPut(a.id) {
-            Marker(map).apply {
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                map.overlays.add(this)
-            }
-        }
-        m.position = p
-        m.title = "${a.label} – SOS #${a.id} – ${MeshBus.TYPES.getOrElse(a.type) { "SOS" }} (salturi: ${a.hops})"
-        if (isNew) map.controller.animateTo(p)
+    override fun onChanged() {
         map.invalidate()
         updateCompass()
+        refreshButtons()
+        ensureAnim()
     }
 
-    override fun onAlertRemoved(id: Int) {
-        alertMarkers.remove(id)?.let {
-            map.overlays.remove(it)
-            map.invalidate()
-        }
-        updateCompass()
+    override fun onNewAlert(a: MeshBus.Alert) {
+        map.controller.animateTo(GeoPoint(a.lat, a.lon))
     }
 
     override fun onStatus(text: String) { statusText.text = text }
@@ -544,18 +721,21 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         super.onStart()
         MeshBus.listener = this
         statusText.text = MeshBus.status
+        refreshProfile()
         refreshButtons()
-        if (MeshBus.myLat != 0.0) onLocation(MeshBus.myLat, MeshBus.myLon)
-        MeshBus.alerts.values.forEach { onAlert(it, false) }
         sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
         } ?: run { compassText.text = "Telefonul nu are senzor de busolă." }
+        map.invalidate()
+        ensureAnim()
     }
 
     override fun onStop() {
         if (MeshBus.listener === this) MeshBus.listener = null
         sensorManager.unregisterListener(this)
-        stopFlash()          // lanterna se oprește când ieși din aplicație
+        stopFlash()
+        uiHandler.removeCallbacks(animRunner)
+        animating = false
         refreshButtons()
         super.onStop()
     }

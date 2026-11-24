@@ -31,35 +31,37 @@ class MeshForegroundService : Service() {
         const val ACTION_QUIT = "com.sos.meshoffline.QUIT"
         const val EXTRA_TYPE = "type"
         private const val CHANNEL = "mesh"
+        private const val ALERT_CHANNEL = "alerts"
         private const val NOTIF_ID = 1
         private const val MANUFACTURER_ID = 0xFFFF
         private const val MAX_HOPS = 10
-        // Pachet: ID(2) Hops(1) Tip(1) Lat(4) Lon(4) [UID(3) Poreclă(0-8)]  => 12 sau 15..23 bytes
-        private const val BASE_SIZE = 12
-        private const val HEADER_SIZE = 15
-        private const val MAX_SIZE = 23
-        private const val KEEP_MS = 30 * 60 * 1000L
+        // Pachet v3: ID(2) Hops(1) Tip(1) Lat(4) Lon(4) Vârstă-min(1) UID(3) Poreclă(0-8) => 16..24 bytes
+        private const val HEADER_SIZE = 16
+        private const val MAX_SIZE = 24
     }
 
     private class Packet(
         val id: Int, val hops: Int, val type: Int, val lat: Float, val lon: Float,
-        val uid: String, val name: String
+        val uid: String, val name: String, val ageAtRx: Int, val rxAt: Long
     ) {
-        val at = System.currentTimeMillis()
+        fun age(now: Long): Int = ageAtRx + ((now - rxAt) / 60000L).toInt()
         @Volatile var uploaded = false
         @Volatile var uploading = false
     }
 
+    private val handler = Handler(Looper.getMainLooper())
+    private val relayQueue = LinkedHashMap<Int, Packet>()      // doar pe firul principal
+    private val lastUploadAt = HashMap<Int, Long>()
+    private var cloudIds = HashSet<Int>()
+    private var rotateIndex = 0
+
     @Volatile private var ownUploading = false
     @Volatile private var polling = false
-    private var lastPoll = 0L
-    private var firstPollDone = false
-    private val cloudIds = HashSet<Int>()
+    @Volatile private var presenceBusy = false
     private var lastOwnUpload = 0L
-
-    private val handler = Handler(Looper.getMainLooper())
-    private val relayQueue = LinkedHashMap<Int, Packet>()
-    private var rotateIndex = 0
+    private var lastPoll = 0L
+    private var lastPresence = 0L
+    private var firstPollDone = false
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var advertiser: BluetoothLeAdvertiser? = null
@@ -85,85 +87,99 @@ class MeshForegroundService : Service() {
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val raw = result.scanRecord?.getManufacturerSpecificData(MANUFACTURER_ID) ?: return
-            if (raw.size < BASE_SIZE || raw.size > MAX_SIZE || raw.size == 13 || raw.size == 14) return
+            if (raw.size < HEADER_SIZE || raw.size > MAX_SIZE) return
             val buf = ByteBuffer.wrap(raw)
             val id = buf.short.toInt() and 0xFFFF
             val hops = buf.get().toInt() and 0xFF
             val type = buf.get().toInt() and 0xFF
             val lat = buf.float
             val lon = buf.float
-            var uid = ""
-            var name = ""
-            if (raw.size >= HEADER_SIZE) {
-                val u = ByteArray(3)
-                buf.get(u)
-                uid = Profile.bytesToUid(u)
-                name = String(raw, HEADER_SIZE, raw.size - HEADER_SIZE, Charsets.US_ASCII)
-            }
+            val age = buf.get().toInt() and 0xFF
+            val u = ByteArray(3)
+            buf.get(u)
+            val uid = Profile.bytesToUid(u)
+            val name = String(raw, HEADER_SIZE, raw.size - HEADER_SIZE, Charsets.US_ASCII)
 
             if (MeshBus.sosActive && id == MeshBus.mySosId) return
             if (lat.isNaN() || lon.isNaN() || lat !in -90f..90f || lon !in -180f..180f) return
 
+            val now = System.currentTimeMillis()
+            if (age >= MeshBus.MAX_AGE_MIN) return                               // prea veche: moare în mesh
+            if (now / 1000 - age * 60L <= MeshBus.clearAtSec) return              // ștearsă de admin
+
             val known = relayQueue[id]
-            if (known != null && known.hops <= hops + 1) return   // am deja o cale la fel de scurtă
+            val moved = known != null && (known.lat != lat || known.lon != lon) && age <= known.age(now)
+            val fresher = known == null || age < known.age(now) - 1 || hops + 1 < known.hops || moved
+            if (!fresher) return
 
-            if (hops + 1 <= MAX_HOPS) relayQueue[id] = Packet(id, hops + 1, type, lat, lon, uid, name)
+            if (hops + 1 <= MAX_HOPS) relayQueue[id] = Packet(id, hops + 1, type, lat, lon, uid, name, age, now)
 
-            val alert = MeshBus.Alert(id, hops, type, lat.toDouble(), lon.toDouble(), uid, name)
-            MeshBus.alert(alert, known == null)
-            MeshBus.status("ALARMĂ PRIMITĂ de la ${alert.label}\n#$id (${MeshBus.TYPES.getOrElse(type) { "SOS" }}) • salturi BT: $hops")
+            val alert = MeshBus.Alert(id, hops, type, lat.toDouble(), lon.toDouble(), uid, name, age, now, false)
+            if (MeshBus.putAlert(alert, true) == 2) {
+                notifyAlert(alert)
+                MeshBus.status("ALARMĂ PRIMITĂ de la ${alert.label}\n${alert.typeName} • salturi BT: $hops")
+            }
         }
     }
 
-    // O singură buclă: la 3 secunde emite următorul pachet (al meu + cele retransmise)
+    // O singură buclă la 3 secunde: curăță, sincronizează cu cloud-ul și emite următorul pachet
     private val loop = object : Runnable {
         override fun run() {
             wakeLock?.acquire(10 * 60 * 1000L)   // timeout de siguranță, reînnoit la fiecare ciclu
             val now = System.currentTimeMillis()
-            relayQueue.values.removeAll { now - it.at > KEEP_MS }
+            val online = CloudGateway.enabled && CloudGateway.hasInternet(this@MeshForegroundService)
 
+            // 1. Curățenie: alarme expirate (30 min) sau șterse de admin
+            MeshBus.prune()
+            relayQueue.values.removeAll { it.age(now) >= MeshBus.MAX_AGE_MIN || now / 1000 - it.age(now) * 60L <= MeshBus.clearAtSec }
+
+            // 2. Pachetele de emis: al meu + cele retransmise
             val list = ArrayList<Packet>()
             if (MeshBus.sosActive && MeshBus.myLat != 0.0) {
-                list.add(Packet(MeshBus.mySosId, 0, MeshBus.mySosType, MeshBus.myLat.toFloat(), MeshBus.myLon.toFloat(), Profile.uid, Profile.name))
-                // SOS-ul propriu: urcat în cloud la fiecare minut, cât timp există internet
-                if (CloudGateway.enabled && !ownUploading && now - lastOwnUpload > 60_000 && CloudGateway.hasInternet(this@MeshForegroundService)) {
+                list.add(Packet(MeshBus.mySosId, 0, MeshBus.mySosType, MeshBus.myLat.toFloat(), MeshBus.myLon.toFloat(), Profile.uid, Profile.name, 0, now))
+                if (online && !ownUploading && now - lastOwnUpload > 60_000) {
                     ownUploading = true
-                    CloudGateway.upload(this@MeshForegroundService, MeshBus.mySosId, MeshBus.mySosType, MeshBus.myLat, MeshBus.myLon, 0, Profile.name, Profile.uid) { ok ->
+                    CloudGateway.uploadAlert(this@MeshForegroundService, MeshBus.mySosId, MeshBus.mySosType, MeshBus.myLat, MeshBus.myLon, 0,
+                        Profile.name, Profile.uid, now / 1000) { ok ->
                         if (ok) lastOwnUpload = System.currentTimeMillis()
                         ownUploading = false
                     }
                 }
+                val help = MeshBus.responders
+                MeshBus.status("EMITERE SOS ACTIVĂ #${MeshBus.mySosId}\n${MeshBus.TYPES.getOrElse(MeshBus.mySosType) { "SOS" }}" +
+                    if (help.isNotEmpty()) "\nAJUTOR ÎN DRUM: ${help.joinToString(", ")}" else "")
             }
             list.addAll(relayQueue.values)
 
-            // CITIRE din cloud (alarme de pe pagina web sau de la alte telefoane), la fiecare 20 s, cât timp există internet
-            if (CloudGateway.enabled && !polling && now - lastPoll > 20_000 && CloudGateway.hasInternet(this@MeshForegroundService)) {
+            // 3. Citire din cloud la 20 s (alarme de pe web / alte telefoane, persoane, marcaj admin)
+            if (online && !polling && now - lastPoll > 20_000) {
                 polling = true
                 lastPoll = now
-                CloudGateway.fetchAlerts(this@MeshForegroundService) { list ->
-                    if (list != null) {
-                        val ids = HashSet<Int>()
-                        for (a in list) {
-                            if (MeshBus.sosActive && a.id == MeshBus.mySosId) continue
-                            ids.add(a.id)
-                            val isNew = firstPollDone && !MeshBus.alerts.containsKey(a.id)
-                            MeshBus.alert(a, isNew)
-                        }
-                        for (old in cloudIds) if (old !in ids) MeshBus.remove(old)   // alarmă oprită, dispare de pe hartă
-                        cloudIds.clear(); cloudIds.addAll(ids)
-                        firstPollDone = true
+                CloudGateway.fetchAll(this@MeshForegroundService, if (MeshBus.sosActive) MeshBus.mySosId else -1) { snap ->
+                    handler.post {
+                        polling = false
+                        if (snap != null) applyCloud(snap)
                     }
-                    polling = false
                 }
             }
 
-            // PUNTE: alarmele primite prin Bluetooth se urcă în cloud imediat ce există internet (chiar slab).
-            // Dacă urcarea eșuează, se reîncearcă la următorul ciclu (3 s) până reușește.
-            if (CloudGateway.enabled && CloudGateway.hasInternet(this@MeshForegroundService)) {
+            // 4. Prezența mea pe hartă (poziție + poreclă), la 60 s, doar dacă e permis
+            if (online && Profile.presence && !presenceBusy && now - lastPresence > 60_000 && MeshBus.myLat != 0.0) {
+                presenceBusy = true
+                lastPresence = now
+                CloudGateway.uploadPresence(this@MeshForegroundService) { presenceBusy = false }
+            }
+
+            // 5. PUNTE: alarmele primite prin Bluetooth se urcă în cloud (și se reîncearcă până reușește)
+            if (online) {
                 for (p in relayQueue.values) {
-                    if (!p.uploaded && !p.uploading) {
+                    val last = lastUploadAt[p.id] ?: 0L
+                    if (!p.uploaded && !p.uploading && now - last > 30_000) {
                         p.uploading = true
-                        CloudGateway.upload(this@MeshForegroundService, p.id, p.type, p.lat.toDouble(), p.lon.toDouble(), p.hops - 1, p.name, p.uid) { ok ->
+                        lastUploadAt[p.id] = now
+                        // timestamp = momentul estimat al alarmei originale, ca să nu "învie" alarme vechi
+                        CloudGateway.uploadAlert(this@MeshForegroundService, p.id, p.type, p.lat.toDouble(), p.lon.toDouble(), p.hops - 1,
+                            p.name, p.uid, now / 1000 - p.age(now) * 60L) { ok ->
                             if (ok) p.uploaded = true
                             p.uploading = false
                         }
@@ -171,10 +187,10 @@ class MeshForegroundService : Service() {
                 }
             }
 
+            // 6. Emisie Bluetooth: un pachet pe ciclu, în rotație
             if (list.isNotEmpty()) {
                 rotateIndex = (rotateIndex + 1) % list.size
-                val p = list[rotateIndex]
-                advertise(p)
+                advertise(list[rotateIndex], now)
             } else {
                 stopAdvertising()
             }
@@ -182,12 +198,46 @@ class MeshForegroundService : Service() {
         }
     }
 
+    /** Aplică datele din cloud (pe firul principal). */
+    private fun applyCloud(snap: CloudGateway.Snapshot) {
+        val now = System.currentTimeMillis()
+        MeshBus.applyClear(snap.clearAt)
+
+        val ids = HashSet<Int>()
+        for (a in snap.alerts) {
+            if (MeshBus.sosActive && a.id == MeshBus.mySosId) continue
+            ids.add(a.id)
+            val r = MeshBus.putAlert(a, firstPollDone)
+            if (r == 2 && firstPollDone) notifyAlert(a)
+            // retransmisie prin Bluetooth, ca telefoanele fără internet din jur să vadă alarma din cloud
+            val known = relayQueue[a.id]
+            if (r != 0 && (known == null || a.age(now) < known.age(now) - 1)) {
+                val p = Packet(a.id, (a.hops + 1).coerceAtMost(MAX_HOPS), a.type, a.lat.toFloat(), a.lon.toFloat(), a.uid, a.name, a.age(now), now)
+                p.uploaded = true      // vine din cloud, nu o urcăm înapoi
+                relayQueue[a.id] = p
+            }
+        }
+        // alarme care au dispărut din cloud (oprite sau șterse) dispar și de pe hartă
+        for (old in cloudIds) {
+            if (old in ids) continue
+            val ex = MeshBus.alerts[old]
+            if (ex == null || ex.fromCloud || ex.age(now) >= 2) {
+                MeshBus.removeAlert(old)
+                relayQueue.remove(old)
+            }
+        }
+        cloudIds = ids
+        MeshBus.setPeople(snap.people)
+        MeshBus.responders = snap.responders
+        firstPollDone = true
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         Profile.load(this)
-        createChannel()
+        createChannels()
         val notif = buildNotification()
         try {
             if (Build.VERSION.SDK_INT >= 29) {
@@ -215,15 +265,18 @@ class MeshForegroundService : Service() {
                 MeshBus.mySosId = Random.nextInt(1, 32000)
                 MeshBus.mySosType = intent.getIntExtra(EXTRA_TYPE, 0)
                 MeshBus.sosActive = true
+                lastOwnUpload = 0L
                 MeshBus.status("EMITERE SOS ACTIVĂ #${MeshBus.mySosId}\n${MeshBus.TYPES.getOrElse(MeshBus.mySosType) { "SOS" }}")
             }
             ACTION_SOS_STOP -> {
-                CloudGateway.delete(this, MeshBus.mySosId)
+                CloudGateway.deleteAlert(this, MeshBus.mySosId)
                 MeshBus.sosActive = false
+                MeshBus.responders = emptyList()
                 MeshBus.status("Alarma oprită. Mesh activ în fundal.")
             }
             ACTION_QUIT -> {
-                if (MeshBus.sosActive) CloudGateway.delete(this, MeshBus.mySosId)
+                if (MeshBus.sosActive) CloudGateway.deleteAlert(this, MeshBus.mySosId)
+                CloudGateway.removePresence(this)
                 MeshBus.sosActive = false
                 stopSelf()
             }
@@ -251,20 +304,18 @@ class MeshForegroundService : Service() {
         val adapter = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
         if (adapter == null || !adapter.isEnabled) {
             MeshBus.status("ATENȚIE: pornește Bluetooth-ul!")
-            return
+        } else {
+            advertiser = adapter.bluetoothLeAdvertiser
+            scanner = adapter.bluetoothLeScanner
+            val filter = ScanFilter.Builder().setManufacturerData(MANUFACTURER_ID, ByteArray(0)).build()
+            val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
+            try { scanner?.startScan(listOf(filter), settings, scanCallback) } catch (_: Exception) {}
         }
-        advertiser = adapter.bluetoothLeAdvertiser
-        scanner = adapter.bluetoothLeScanner
-
-        val filter = ScanFilter.Builder().setManufacturerData(MANUFACTURER_ID, ByteArray(0)).build()
-        val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-        try { scanner?.startScan(listOf(filter), settings, scanCallback) } catch (_: Exception) {}
-
-        handler.post(loop)
+        handler.post(loop)    // bucla rulează și fără Bluetooth (cloud, prezență)
     }
 
     @SuppressLint("MissingPermission")
-    private fun advertise(p: Packet) {
+    private fun advertise(p: Packet, now: Long) {
         stopAdvertising()
         val nameBytes = p.name.toByteArray(Charsets.US_ASCII).take(8).toByteArray()
         val buf = ByteBuffer.allocate(HEADER_SIZE + nameBytes.size)
@@ -273,6 +324,7 @@ class MeshForegroundService : Service() {
         buf.put(p.type.toByte())
         buf.putFloat(p.lat)
         buf.putFloat(p.lon)
+        buf.put(p.age(now).coerceIn(0, 255).toByte())
         buf.put(Profile.uidToBytes(p.uid.ifEmpty { "AAAA" }))
         buf.put(nameBytes)
         val settings = AdvertiseSettings.Builder()
@@ -289,18 +341,38 @@ class MeshForegroundService : Service() {
         try { advertiser?.stopAdvertising(advertiseCallback) } catch (_: Exception) {}
     }
 
-    private fun createChannel() {
+    private fun createChannels() {
         if (Build.VERSION.SDK_INT >= 26) {
-            val ch = NotificationChannel(CHANNEL, "SOS Mesh", NotificationManager.IMPORTANCE_LOW)
-            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(ch)
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.createNotificationChannel(NotificationChannel(CHANNEL, "SOS Mesh", NotificationManager.IMPORTANCE_LOW))
+            val alerts = NotificationChannel(ALERT_CHANNEL, "Alarme SOS primite", NotificationManager.IMPORTANCE_HIGH).apply {
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 400, 200, 400, 200, 800)
+            }
+            nm.createNotificationChannel(alerts)
         }
     }
 
+    private fun openAppIntent() = PendingIntent.getActivity(
+        this, 0, Intent(this, MainActivity::class.java),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
+
+    /** Sunet + vibrație când vine o alarmă nouă, chiar cu ecranul stins. */
+    private fun notifyAlert(a: MeshBus.Alert) {
+        try {
+            val n = Notification.Builder(this, ALERT_CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentTitle("SOS: ${a.label}")
+                .setContentText("${a.typeName} • %.5f, %.5f".format(a.lat, a.lon))
+                .setContentIntent(openAppIntent())
+                .setAutoCancel(true)
+                .build()
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(1000 + a.id, n)
+        } catch (_: Exception) {}
+    }
+
     private fun buildNotification(): Notification {
-        val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
         val quit = PendingIntent.getService(
             this, 1, Intent(this, MeshForegroundService::class.java).setAction(ACTION_QUIT),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -309,7 +381,7 @@ class MeshForegroundService : Service() {
             .setContentTitle("SOS Mesh Activ")
             .setContentText("Scanare și retransmisie în fundal")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentIntent(open)
+            .setContentIntent(openAppIntent())
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Oprește", quit).build())
             .build()

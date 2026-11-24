@@ -3,7 +3,7 @@ package com.sos.meshoffline
 import android.content.Context
 import java.security.SecureRandom
 
-/** Profilul utilizatorului: poreclă (3-8 caractere) + ID unic de 4 caractere generat o singură dată. */
+/** Profil local: poreclă (3-8), ID unic (4), cod de grup pentru cloud (6-20) și opțiunea de a fi vizibil pe hartă. */
 object Profile {
     private const val PREFS = "profile"
     private const val ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"   // 32 de caractere, fără 0/O/1/I
@@ -12,10 +12,18 @@ object Profile {
         private set
     var uid = ""
         private set
+    var group = ""
+        private set
+    var presence = true
+        private set
+
+    val cloudReady: Boolean get() = group.length >= 6
 
     fun load(ctx: Context) {
         val p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         name = p.getString("name", "") ?: ""
+        group = p.getString("group", "") ?: ""
+        presence = p.getBoolean("presence", true)
         uid = p.getString("uid", "") ?: ""
         if (uid.length != 4) {
             val r = SecureRandom()
@@ -24,14 +32,20 @@ object Profile {
         }
     }
 
-    fun setName(ctx: Context, n: String) {
-        name = sanitizeName(n)
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("name", name).apply()
+    fun save(ctx: Context, newName: String, newGroup: String, showMe: Boolean) {
+        name = sanitizeName(newName)
+        group = sanitizeGroup(newGroup)
+        presence = showMe
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString("name", name).putString("group", group).putBoolean("presence", presence).apply()
     }
 
     /** Doar litere/cifre ASCII (1 byte pe caracter în pachetul Bluetooth), max 8. */
     fun sanitizeName(s: String): String =
         s.filter { it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' }.take(8)
+
+    fun sanitizeGroup(s: String): String =
+        s.filter { it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' }.take(20)
 
     fun label(): String = "$name#$uid"
 
