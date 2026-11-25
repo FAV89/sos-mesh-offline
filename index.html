@@ -77,7 +77,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
 <script>(function(){
   var DB_URL='https://sos-offline-mash-default-rtdb.europe-west1.firebasedatabase.app';
   var TYPES=['SOS GENERAL','URGENTA MEDICALA','INCENDIU / PERICOL','ACCIDENT','AM NEVOIE DE APA / MANCARE','PIERDUT / DEZORIENTAT'];
-  var MAX_AGE=30*60, PRESENCE_AGE=10*60, MAX_OWNED=3;
+  var MAX_AGE=30*60, PRESENCE_AGE=5*60, MAX_OWNED=3;
   var $=function(i){return document.getElementById(i)};
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
   function now(){return Math.floor(Date.now()/1000)}
@@ -238,12 +238,13 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
       if(g!==prof.group) return;
       if(!isNull(res[3])){switchGroup('GLOBAL','GLOBAL');status('Grupul a fost șters. Ai revenit în comunitatea GLOBAL.');return}
       var sos=res[0]||{}, pres=res[1]||{}, clearAt=(typeof res[2]==='number')?res[2]:0;
-      var t=now(), seen={}, n=0, alertUids={};
+      var t=now(), seen={}, n=0, alertUids={}, liveAlerts=[];
       Object.keys(sos).forEach(function(k){
         var a=sos[k];
         if(!a||typeof a.lat!=='number'||typeof a.lon!=='number'||typeof a.timestamp!=='number') return;
         if(t-a.timestamp>=MAX_AGE||a.timestamp<=clearAt) return;
         if(a.uid) alertUids[a.uid]=1;
+        liveAlerts.push(a);
         if(sosOn&&String(k)===String(sosId)) return;
         n++; seen[k]=1;
         var ti=tIdx(a.type);
@@ -255,7 +256,9 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
       Object.keys(pres).forEach(function(k){
         var p=pres[k];
         if(!p||typeof p.lat!=='number'||typeof p.lon!=='number') return;
-        if(k===prof.uid||alertUids[k]||t-p.timestamp>PRESENCE_AGE) return;   // cine are alarmă apare doar ca punct roșu
+        if(k===prof.uid||alertUids[k]||t-p.timestamp>PRESENCE_AGE) return;   // cine are alarmă apare doar ca punct de alarmă
+        var dup=liveAlerts.some(function(a){return (a.name||'').toLowerCase()===(p.name||'').toLowerCase()&&Math.abs(a.lat-p.lat)<0.003&&Math.abs(a.lon-p.lon)<0.004});
+        if(dup) return;   // același nume lângă o alarmă (ex. ID schimbat după reinstalare)
         seenP[k]=1;
         upsert(peopleM,k,p.lat,p.lon,html(p.src==='web'?'cyan':'blue',p.name||'',false,true),function(){return esc(p.name||'')+'#'+esc(k)+' ('+(p.src==='web'?'web':'aplicație')+')'});
       });
