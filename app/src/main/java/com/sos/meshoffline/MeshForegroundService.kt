@@ -14,6 +14,10 @@ import android.content.pm.ServiceInfo
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.ConnectivityManager
+import org.osmdroid.tileprovider.cachemanager.CacheManager
+import org.osmdroid.util.BoundingBox
+import org.osmdroid.views.MapView
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -68,6 +72,11 @@ class MeshForegroundService : Service() {
     private var scanner: BluetoothLeScanner? = null
     private var locationManager: LocationManager? = null
     private var started = false
+    private var ecoApplied = false          // modul de consum aplicat acum scanării și GPS-ului
+    private var mapView: MapView? = null    // invizibil, doar pentru descărcarea hărții
+    @Volatile private var mapBusy = false
+    private var lastMapCheck = 0L
+    private var wasOnline = false
 
     private val advertiseCallback = object : AdvertiseCallback() {}
 
@@ -125,9 +134,23 @@ class MeshForegroundService : Service() {
     // O singură buclă la 3 secunde: curăță, sincronizează cu cloud-ul și emite următorul pachet
     private val loop = object : Runnable {
         override fun run() {
-            wakeLock?.acquire(10 * 60 * 1000L)   // timeout de siguranță, reînnoit la fiecare ciclu
             val now = System.currentTimeMillis()
-            val online = CloudGateway.enabled && CloudGateway.hasInternet(this@MeshForegroundService)
+            val net = CloudGateway.hasInternet(this@MeshForegroundService)
+            val online = CloudGateway.enabled && net
+
+            // MOD ECONOMIC: când nu e nicio alarmă și nu emit nimic, scanarea și GPS-ul trec pe consum mic
+            val hasWork = MeshBus.sosActive || relayQueue.isNotEmpty() || MeshBus.alerts.isNotEmpty()
+            val eco = Profile.battery && !hasWork
+            if (eco != ecoApplied) {
+                ecoApplied = eco
+                restartScan(eco)
+                requestLocation(eco)
+            }
+            val tick = if (eco) 8000L else 3000L
+            val pollEvery = if (eco) 60_000L else 20_000L
+            val presenceEvery = if (eco) 180_000L else 60_000L
+            if (eco) { if (wakeLock?.isHeld == true) wakeLock?.release() }      // procesorul poate dormi
+            else wakeLock?.acquire(10 * 60 * 1000L)                              // timeout de siguranță, reînnoit la fiecare ciclu
 
             // 1. Curățenie: alarme expirate (30 min) sau șterse de admin
             MeshBus.prune()
@@ -152,7 +175,7 @@ class MeshForegroundService : Service() {
             list.addAll(relayQueue.values)
 
             // 3. Citire din cloud la 20 s (alarme de pe web / alte telefoane, persoane, marcaj admin)
-            if (online && !polling && now - lastPoll > 20_000) {
+            if (online && !polling && now - lastPoll > pollEvery) {
                 polling = true
                 lastPoll = now
                 CloudGateway.fetchAll(this@MeshForegroundService, if (MeshBus.sosActive) MeshBus.mySosId else -1) { snap ->
@@ -164,7 +187,7 @@ class MeshForegroundService : Service() {
             }
 
             // 4. Prezența mea pe hartă (poziție + poreclă), la 60 s, doar dacă e permis
-            if (online && Profile.sharePresence && !MeshBus.sosActive && !presenceBusy && now - lastPresence > 60_000 && MeshBus.myLat != 0.0) {
+            if (online && Profile.sharePresence && !MeshBus.sosActive && !presenceBusy && now - lastPresence > presenceEvery && MeshBus.myLat != 0.0) {
                 presenceBusy = true
                 lastPresence = now
                 CloudGateway.uploadPresence(this@MeshForegroundService) { presenceBusy = false }
@@ -194,7 +217,64 @@ class MeshForegroundService : Service() {
             } else {
                 stopAdvertising()
             }
-            handler.postDelayed(this, 3000)
+            // 7. Harta offline: la prima pornire și când revine internetul (verificare mică, doar dale lipsă)
+            if (net && !wasOnline) lastMapCheck = 0L       // tocmai a revenit internetul: verificăm imediat
+            wasOnline = net
+            if (net && !mapBusy && MeshBus.myLat != 0.0 && (MeshBus.mapForce || now - lastMapCheck > 5 * 60_000L)) {
+                lastMapCheck = now
+                checkOfflineMap()
+            }
+            handler.postDelayed(this, tick)
+        }
+    }
+
+    /** Descarcă (o dată) zona din jurul tău și o verifică din când în când. Dalele deja salvate nu se descarcă din nou. */
+    private fun checkOfflineMap() {
+        val force = MeshBus.mapForce
+        MeshBus.mapForce = false
+        val lat = MeshBus.myLat
+        val lon = MeshBus.myLon
+        val st = MapConfig.state(this)
+        val now = System.currentTimeMillis()
+        val first = st.at == 0L
+        var moved = false
+        if (!first) {
+            val r = FloatArray(1)
+            Location.distanceBetween(st.lat, st.lon, lat, lon, r)
+            moved = r[0] > 2000f                                     // te-ai mutat >2 km de zona salvată
+        }
+        val stale = !first && now - st.at > 14L * 24 * 3600 * 1000    // zona are peste 14 zile
+        if (!force && !first && !moved && !stale) return
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        if (!force && !first && cm.isActiveNetworkMetered) return    // reîmprospătările doar pe Wi-Fi, ca să nu consume date
+        startMapDownload(lat, lon)
+    }
+
+    private fun startMapDownload(lat: Double, lon: Double) {
+        mapBusy = true
+        try {
+            MapConfig.configure(this)
+            val mv = mapView ?: MapView(applicationContext).also { it.setTileSource(MapConfig.tileSource()); mapView = it }
+            val dLat = 3000.0 / 111000.0                              // aprox. 3 km în jur
+            val dLon = dLat / Math.cos(Math.toRadians(lat)).coerceAtLeast(0.2)
+            val box = BoundingBox(lat + dLat, lon + dLon, lat - dLat, lon - dLon)
+            val cache = CacheManager(mv)
+            val count = cache.possibleTilesInArea(box, 12, 17)
+            if (count > 2500) { mapBusy = false; return }
+            if (!MeshBus.sosActive) MeshBus.status("Harta offline: verific zona din jurul tău ($count dale)...")
+            cache.downloadAreaAsyncNoUI(applicationContext, box, 12, 17, object : CacheManager.CacheManagerCallback {
+                override fun onTaskComplete() {
+                    MapConfig.saveState(this@MeshForegroundService, lat, lon)
+                    mapBusy = false
+                    if (!MeshBus.sosActive) MeshBus.status("Harta offline e gata pentru zona ta.")
+                }
+                override fun onTaskFailed(errors: Int) { mapBusy = false }   // se reîncearcă peste 5 minute
+                override fun updateProgress(progress: Int, currentZoomLevel: Int, zoomMin: Int, zoomMax: Int) {}
+                override fun downloadStarted() {}
+                override fun setPossibleTilesInArea(total: Int) {}
+            })
+        } catch (e: Exception) {
+            mapBusy = false
         }
     }
 
@@ -245,6 +325,7 @@ class MeshForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         Profile.load(this)
+        MapConfig.configure(this)
         createChannels()
         val notif = buildNotification()
         try {
@@ -296,18 +377,7 @@ class MeshForegroundService : Service() {
     private fun startHardware() {
         if (started) return
         started = true
-        try {
-            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            locationManager = lm
-            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER))
-                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 1f, locListener)
-            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER))
-                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 1f, locListener)
-            (lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER))?.let { locListener.onLocationChanged(it) }
-        } catch (e: Exception) {
-            MeshBus.status("Eroare locație: pornește GPS-ul!")
-        }
+        requestLocation(false)
 
         val adapter = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
         if (adapter == null || !adapter.isEnabled) {
@@ -315,11 +385,40 @@ class MeshForegroundService : Service() {
         } else {
             advertiser = adapter.bluetoothLeAdvertiser
             scanner = adapter.bluetoothLeScanner
-            val filter = ScanFilter.Builder().setManufacturerData(MANUFACTURER_ID, ByteArray(0)).build()
-            val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-            try { scanner?.startScan(listOf(filter), settings, scanCallback) } catch (_: Exception) {}
+            restartScan(false)
         }
         handler.post(loop)    // bucla rulează și fără Bluetooth (cloud, prezență)
+    }
+
+    /** Cere poziția: des în modul normal, rar (10 s / 10 m) în modul economic. */
+    @SuppressLint("MissingPermission")
+    private fun requestLocation(eco: Boolean) {
+        try {
+            val lm = locationManager ?: (getSystemService(Context.LOCATION_SERVICE) as LocationManager).also { locationManager = it }
+            lm.removeUpdates(locListener)
+            val every = if (eco) 10_000L else 2000L
+            val dist = if (eco) 10f else 1f
+            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER))
+                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, every, dist, locListener)
+            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER))
+                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, every, dist, locListener)
+            (lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER))?.let { if (MeshBus.myLat == 0.0) locListener.onLocationChanged(it) }
+        } catch (e: Exception) {
+            MeshBus.status("Eroare locație: pornește GPS-ul!")
+        }
+    }
+
+    /** Pornește scanarea Bluetooth: continuă în modul normal, cu pauze (consum mic) în modul economic. */
+    @SuppressLint("MissingPermission")
+    private fun restartScan(eco: Boolean) {
+        val sc = scanner ?: return
+        try { sc.stopScan(scanCallback) } catch (_: Exception) {}
+        val filter = ScanFilter.Builder().setManufacturerData(MANUFACTURER_ID, ByteArray(0)).build()
+        val settings = ScanSettings.Builder()
+            .setScanMode(if (eco) ScanSettings.SCAN_MODE_LOW_POWER else ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+        try { sc.startScan(listOf(filter), settings, scanCallback) } catch (_: Exception) {}
     }
 
     @SuppressLint("MissingPermission")
@@ -402,6 +501,8 @@ class MeshForegroundService : Service() {
         stopAdvertising()
         try { locationManager?.removeUpdates(locListener) } catch (_: Exception) {}
         if (wakeLock?.isHeld == true) wakeLock?.release()
+        try { mapView?.onDetach() } catch (_: Exception) {}
+        mapView = null
         started = false
         super.onDestroy()
     }

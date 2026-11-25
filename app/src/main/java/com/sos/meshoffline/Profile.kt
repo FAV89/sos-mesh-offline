@@ -31,6 +31,10 @@ object Profile {
 
     const val GLOBAL = "GLOBAL"
 
+    /** Economie de baterie: scanare și GPS mai rare cât timp nu e nicio alarmă. */
+    var battery = false
+        private set
+
     val cloudReady: Boolean get() = group.length >= 6
     val isGlobal: Boolean get() = group == GLOBAL
     val sharePresence: Boolean get() = if (isGlobal) presenceGlobal else presence
@@ -40,6 +44,7 @@ object Profile {
         name = p.getString("name", "") ?: ""
         presence = p.getBoolean("presence", true)
         presenceGlobal = p.getBoolean("presenceGlobal", false)
+        battery = p.getBoolean("battery", false)
         // prima pornire (sau după actualizare): toți intră în comunitatea GLOBAL
         if (!p.contains("group2")) {
             group = GLOBAL; groupName = GLOBAL
@@ -68,6 +73,11 @@ object Profile {
         group = sanitizeGroup(gid)
         groupName = if (group.isEmpty()) "" else displayName
         prefs(ctx).edit().putString("group2", group).putString("groupName2", groupName).apply()
+    }
+
+    fun setBattery(ctx: Context, v: Boolean) {
+        battery = v
+        prefs(ctx).edit().putBoolean("battery", v).apply()
     }
 
     /** Comută vizibilitatea pentru grupul curent (GLOBAL are setarea lui separată). */

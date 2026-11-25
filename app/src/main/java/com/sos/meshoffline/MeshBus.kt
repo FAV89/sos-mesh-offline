@@ -43,6 +43,8 @@ object MeshBus {
     @Volatile var mySosType = 0
     @Volatile var status = "Pornesc serviciul Mesh..."
     @Volatile var clearAtSec = 0L
+    /** Setat de meniu: serviciul verifică și actualizează acum harta offline. */
+    @Volatile var mapForce = false
     @Volatile var people: Map<String, Person> = emptyMap()
     @Volatile var responders: List<String> = emptyList()
     val alerts = ConcurrentHashMap<Int, Alert>()

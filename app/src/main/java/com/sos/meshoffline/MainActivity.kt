@@ -230,19 +230,22 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val cfg = Configuration.getInstance()
-        cfg.userAgentValue = "com.sos.meshoffline/1.0 (SOS Mesh Offline; Android)"
-        cfg.osmdroidBasePath = File(filesDir, "osmdroid")
-        cfg.osmdroidTileCache = File(cfg.osmdroidBasePath, "tiles")
+        MapConfig.configure(this)
 
         Profile.load(this)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         findTorch()
 
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        applyScreenFlag()
         setupUI()
         checkPermissions()
         if (Profile.name.length < 3) showNameDialog(true)
+    }
+
+    /** Ecranul rămâne aprins cât aplicația e deschisă; în modul economic se stinge normal. */
+    private fun applyScreenFlag() {
+        if (Profile.battery) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     private fun roundBg(color: Int, radiusDp: Float) = GradientDrawable().apply {
@@ -283,18 +286,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             gravity = Gravity.CENTER
         }
 
-        // Cheie CARTO gratuită (carto.com/basemaps/apikey). Goală = OpenStreetMap standard.
-        val cartoKey = "cb1_5dkf_1_57d40daf6b5b373875d498da"
-        val tileSource = if (cartoKey.isNotBlank()) {
-            object : XYTileSource(
-                "CartoVoyagerKey", 0, 19, 256, ".png",
-                arrayOf("https://basemaps.cartocdn.com/rastertiles/voyager/"),
-                "© OpenStreetMap contributors, © CARTO"
-            ) {
-                override fun getTileURLString(pMapTileIndex: Long): String =
-                    super.getTileURLString(pMapTileIndex) + "?key=" + cartoKey
-            }
-        } else TileSourceFactory.MAPNIK
+        val tileSource = MapConfig.tileSource()
 
         map = MapView(this).apply {
             setTileSource(tileSource)
@@ -454,7 +446,9 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             "Schimbă porecla (${Profile.name})",
             "Grupuri",
             "Vizibil pe hartă în ${if (Profile.isGlobal) "GLOBAL" else "acest grup"}: ${if (Profile.sharePresence) "DA" else "NU"}",
-            if (adminCode == null) "Admin" else "Admin (activ)"
+            if (adminCode == null) "Admin" else "Admin (activ)",
+            "Economie baterie: ${if (Profile.battery) "DA" else "NU"}",
+            "Actualizează harta offline acum"
         )
         AlertDialog.Builder(this).setTitle("Meniu").setItems(items) { _, which ->
             when (which) {
@@ -467,6 +461,14 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
                     toast(if (v) "Ceilalți din grup te văd pe hartă." else "Nu mai ești vizibil pe hartă. Alarmele tale rămân vizibile.")
                 }
                 3 -> showAdminMenu()
+                4 -> {
+                    val v = !Profile.battery
+                    Profile.setBattery(this, v)
+                    applyScreenFlag()
+                    toast(if (v) "Economie baterie ACTIVĂ: scanare și GPS mai rare cât nu e nicio alarmă; ecranul se stinge normal. La o alarmă trece singur pe modul normal."
+                          else "Economie baterie oprită: scanare continuă.")
+                }
+                5 -> { MeshBus.mapForce = true; toast("Verific și actualizez harta offline în fundal (are nevoie de internet).") }
             }
         }.show()
     }
