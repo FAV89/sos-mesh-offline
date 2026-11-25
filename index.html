@@ -440,7 +440,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
           if(!ok(r)){status('Cod admin greșit (sau lipsește /config/adminCode în Firebase).');return}
           return fetch(b+'/sos.json').then(function(x){return x.json()}).then(function(o){
             return Promise.all(Object.keys(o||{}).map(function(k){return fetch(b+'/sos/'+k+'.json',{method:'DELETE'}).then(function(){return delResp(b,k)})}));
-          }).then(function(){status('Alarmele au fost șterse.');poll()});
+          }).then(function(){saveM([]);showManual();status('Alarmele au fost șterse.');poll()});
         }).catch(function(){status('Eroare de rețea.')});
       }},
       {label:'Șterge un grup (după ID din consola Firebase)',fn:function(){
@@ -457,18 +457,42 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   }
 
   // ---------- SOS primit manual (din SMS) ----------
+  // Se salvează doar în acest browser, expiră după 30 de minute și se poate șterge din fereastra alarmei.
   var KEY='sos-mesh-received';
-  function loadM(){try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){return[]}}
-  function showManual(){loadM().forEach(function(a){upsert(manualM,a.id,a.lat,a.lon,html('red','SOS #'+a.id,true,false,'!'),function(){return 'SOS #'+esc(a.id)+' (adăugat manual)'})})}
+  function loadM(){
+    var l=[]; try{l=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){}
+    var t=Date.now();
+    return l.filter(function(a){return a&&typeof a.lat==='number'&&(t-(a.ts||t))<MAX_AGE*1000});
+  }
+  function saveM(l){try{localStorage.setItem(KEY,JSON.stringify(l))}catch(e){}}
+  function removeManual(id){
+    saveM(loadM().filter(function(a){return String(a.id)!==String(id)}));
+    showManual(); status('Alarma #'+id+' (adăugată din SMS) a fost ștearsă.');
+  }
+  function manualPopup(layer){
+    var a=layer._a||{}, box=document.createElement('div'); box.className='pop';
+    box.innerHTML='SOS #'+esc(a.id)+' (adăugat manual din SMS)<br>'+esc(a.lat.toFixed(5))+', '+esc(a.lon.toFixed(5))+'<br>';
+    var d=document.createElement('button'); d.textContent='ȘTERGE';
+    d.onclick=function(){removeManual(a.id)}; box.appendChild(d);
+    return box;
+  }
+  function showManual(){
+    var l=loadM(), seen={};
+    l.forEach(function(a){
+      seen[a.id]=1;
+      var m=upsert(manualM,a.id,a.lat,a.lon,html('red','SOS #'+a.id,true,false,'!'),manualPopup); m._a=a;
+    });
+    prune(manualM,seen);
+  }
+  setInterval(showManual,60000);   // dispar singure după 30 de minute
   function addManual(){
     var v=window.prompt('Lipește mesajul primit, ex: SOS #123 47.65670,23.58500'); if(!v) return;
     var m=/#?(\d+)\D+(-?\d+(?:\.\d+)?)\s*[,; ]\s*(-?\d+(?:\.\d+)?)/.exec(v);
     if(!m){window.alert('Format necunoscut.');return}
     var id=m[1],lat=parseFloat(m[2]),lon=parseFloat(m[3]);
     if(Math.abs(lat)>90||Math.abs(lon)>180){window.alert('Coordonate invalide.');return}
-    var l=loadM().filter(function(a){return a.id!==id}); l.push({id:id,lat:lat,lon:lon});
-    try{localStorage.setItem(KEY,JSON.stringify(l))}catch(e){}
-    showManual(); map.setView([lat,lon],16);
+    var l=loadM().filter(function(a){return String(a.id)!==String(id)}); l.push({id:id,lat:lat,lon:lon,ts:Date.now()});
+    saveM(l); showManual(); map.setView([lat,lon],16);
   }
 
   // ---------- pornire ----------
