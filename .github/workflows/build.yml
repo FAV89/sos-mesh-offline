@@ -24,6 +24,38 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
 
+    - name: Generate launcher icon from icon-512.png
+      run: |
+        python3 -m pip install --quiet pillow
+        python3 - <<'PY'
+        from PIL import Image
+        import os
+        src = Image.open("icon-512.png").convert("RGB")
+        w, h = src.size
+        corners = [src.getpixel(p) for p in [(2, 2), (w - 3, 2), (2, h - 3), (w - 3, h - 3)]]
+        bg = tuple(sum(c[i] for c in corners) // 4 for i in range(3))
+        hexbg = "#%02X%02X%02X" % bg
+        res = "app/src/main/res"
+        legacy = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
+        layer = {"mdpi": 108, "hdpi": 162, "xhdpi": 216, "xxhdpi": 324, "xxxhdpi": 432}
+        for d, s in legacy.items():
+            os.makedirs(f"{res}/mipmap-{d}", exist_ok=True)
+            src.resize((s, s), Image.LANCZOS).save(f"{res}/mipmap-{d}/ic_launcher.png")
+            L = layer[d]
+            canvas = Image.new("RGBA", (L, L), (0, 0, 0, 0))
+            inner = int(L * 0.85)
+            icon = src.resize((inner, inner), Image.LANCZOS).convert("RGBA")
+            canvas.paste(icon, ((L - inner) // 2, (L - inner) // 2))
+            canvas.save(f"{res}/mipmap-{d}/ic_launcher_foreground.png")
+        os.makedirs(f"{res}/values", exist_ok=True)
+        with open(f"{res}/values/ic_launcher_background.xml", "w") as f:
+            f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">' + hexbg + '</color>\n</resources>\n')
+        os.makedirs(f"{res}/mipmap-anydpi-v26", exist_ok=True)
+        with open(f"{res}/mipmap-anydpi-v26/ic_launcher.xml", "w") as f:
+            f.write('<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n    <background android:drawable="@color/ic_launcher_background"/>\n    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>\n</adaptive-icon>\n')
+        print("Pictograma generata, fundal", hexbg)
+        PY
+
     - name: Build Debug APK
       run: |
         chmod +x gradlew || true
