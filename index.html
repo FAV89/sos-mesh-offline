@@ -215,9 +215,20 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   }
 
   function leaveGroup(){
-    delPresence(); prof.group=''; saveProf();
-    clearStore(alertM); clearStore(peopleM); renderProfile();
-  }
+    delPresence();
+
+    prof.group = prof.country || 'RO';
+
+    saveProf();
+
+    clearStore(alertM);
+    clearStore(peopleM);
+
+    renderProfile();
+
+    poll();
+    syncPresence(true);
+}
 
   function poll(){
     if(!cloudOn()) return;
