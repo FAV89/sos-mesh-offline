@@ -167,7 +167,9 @@ object CloudGateway {
             val (c, t) = http("GET", "$r/owners/$token/groups.json")
             if (c !in 200..299) { onResult(null); return@execute }
             val o = parseObj(t)
-            onResult(o?.let { ob -> ob.keys().asSequence().map { it to ob.optString(it, it) }.toList() } ?: emptyList())
+            val out = ArrayList<Pair<String, String>>()
+            if (o != null) for (k in o.keys()) o.optJSONObject(k)?.let { out.add(it.optString("id") to it.optString("name")) }
+            onResult(out)
         }
     }
 
@@ -179,15 +181,19 @@ object CloudGateway {
         exec.execute {
             val (c0, t0) = http("GET", "$r/owners/$token/groups.json")
             if (c0 !in 200..299) { onDone(false, "Eroare de rețea ($c0).", ""); return@execute }
-            if ((parseObj(t0)?.length() ?: 0) >= MAX_OWNED_GROUPS) {
+            // limita de 3: proprietarul are 3 sloturi (1, 2, 3); un grup nou ocupă primul slot liber
+            val used = parseObj(t0)
+            val slot = listOf("1", "2", "3").firstOrNull { used?.has(it) != true }
+            if (slot == null) {
                 onDone(false, "Ai deja $MAX_OWNED_GROUPS grupuri create. Șterge unul ca să creezi altul.", ""); return@execute
             }
-            if (http("PUT", "$r/owners/$token/groups/$gid.json", JSONObject.quote(name)).first !in 200..299) {
-                onDone(false, "Nu am putut înregistra grupul (limita de $MAX_OWNED_GROUPS?).", ""); return@execute
+            val entry = JSONObject().apply { put("id", gid); put("name", name) }.toString()
+            if (http("PUT", "$r/owners/$token/groups/$slot.json", entry).first !in 200..299) {
+                onDone(false, "Nu am putut înregistra grupul.", ""); return@execute
             }
             val created = http("PUT", "$r/meta/$gid/created.json", (System.currentTimeMillis() / 1000).toString())
             if (created.first !in 200..299) {
-                http("DELETE", "$r/owners/$token/groups/$gid.json")
+                http("DELETE", "$r/owners/$token/groups/$slot.json")
                 onDone(false, "Există deja un grup cu acest nume și această parolă. Alege altă parolă.", ""); return@execute
             }
             http("PUT", "$r/meta/$gid/owner.json", JSONObject.quote(token))
@@ -204,7 +210,9 @@ object CloudGateway {
             purge(code)
             val body = JSONObject().apply { put("ts", System.currentTimeMillis() / 1000); put("code", token) }.toString()
             if (http("PUT", "$r/meta/$code/deleted.json", body).first in 200..299) {
-                http("DELETE", "$r/owners/$token/groups/$code.json")
+                val mine = parseObj(http("GET", "$r/owners/$token/groups.json").second)
+                val slot = mine?.keys()?.asSequence()?.firstOrNull { mine.optJSONObject(it)?.optString("id") == code }
+                if (slot != null) http("DELETE", "$r/owners/$token/groups/$slot.json")
                 onDone(true, "Grupul a fost șters.")
             } else onDone(false, "Nu ești proprietarul acestui grup.")
         }
