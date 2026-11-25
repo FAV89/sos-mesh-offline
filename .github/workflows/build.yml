@@ -41,7 +41,13 @@ jobs:
       with:
         tag_name: apk-${{ github.run_number }}
         name: Build #${{ github.run_number }} (SOS Mesh Offline)
-        files: app/build/outputs/apk/debug/app-debug.apk
+        body: |
+          **Pagina web (fără instalare):** https://fav89.github.io/sos-mesh-offline/
+          **Aplicația Android:** descarcă `app-debug.apk` de mai jos și instalează-l (permite surse necunoscute).
+          Pagina web e atașată și ca `index.html`, pentru uz local.
+        files: |
+          app/build/outputs/apk/debug/app-debug.apk
+          index.html
         make_latest: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
