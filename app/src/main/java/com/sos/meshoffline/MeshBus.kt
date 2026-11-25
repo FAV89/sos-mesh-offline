@@ -88,6 +88,14 @@ object MeshBus {
         if (any) main.post { listener?.onChanged() }
     }
 
+    /** La schimbarea grupului: dispar alarmele și persoanele venite din cloud. */
+    fun dropCloud() {
+        for (a in alerts.values) if (a.fromCloud) alerts.remove(a.id)
+        people = emptyMap()
+        responders = emptyList()
+        main.post { listener?.onChanged() }
+    }
+
     fun setPeople(list: List<Person>) {
         people = list.associateBy { it.uid }
         main.post { listener?.onChanged() }

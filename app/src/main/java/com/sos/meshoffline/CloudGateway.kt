@@ -6,27 +6,40 @@ import android.net.NetworkCapabilities
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.concurrent.Executors
 
 /**
- * Legătura cu Firebase Realtime Database (REST). Totul stă sub /g/{COD_GRUP}/..., deci doar cei care
- * știu codul de grup pot citi sau scrie. Dacă DB_URL sau codul de grup lipsesc, cloud-ul e oprit (rămâne doar Bluetooth).
+ * Legătura cu Firebase Realtime Database (REST).
+ *  /g/{GRUP}/...     datele grupului (alarme, prezență, răspunsuri, marcaj admin)
+ *  /meta/{GRUP}/...  registrul grupurilor (creat, proprietar, șters)
+ *  /owners/{JETON}/groups/{GRUP}  grupurile create de un proprietar (max 3, impus de regulile Firebase)
+ *  /adminCheck/{COD}  se poate citi doar dacă COD = /config/adminCode (verificare admin fără a stoca nimic)
  */
 object CloudGateway {
     const val DB_URL = "https://sos-offline-mash-default-rtdb.europe-west1.firebasedatabase.app/"
+
+    const val GROUP_OK = 0
+    const val GROUP_MISSING = 1
+    const val GROUP_DELETED = 2
+    const val GROUP_ERROR = 3
+    const val MAX_OWNED_GROUPS = 3
 
     class Snapshot(
         val alerts: List<MeshBus.Alert>,
         val people: List<MeshBus.Person>,
         val clearAt: Long,
-        val responders: List<String>
+        val responders: List<String>,
+        val groupDeleted: Boolean
     )
 
     private val exec = Executors.newSingleThreadExecutor()
 
     val enabled: Boolean get() = DB_URL.isNotBlank() && Profile.cloudReady
 
-    private fun base() = "${DB_URL.trimEnd('/')}/g/${Profile.group}"
+    private fun root() = DB_URL.trimEnd('/')
+    private fun base() = "${root()}/g/${Profile.group}"
+    private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
     fun hasInternet(ctx: Context): Boolean {
         val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -55,16 +68,29 @@ object CloudGateway {
         } catch (_: Exception) { -1 to "" }
     }
 
-    private fun parseObj(t: String): JSONObject? =
-        try { if (t.isBlank() || t.trim() == "null") null else JSONObject(t) } catch (_: Exception) { null }
+    private fun isNull(t: String) = t.isBlank() || t.trim() == "null"
+    private fun parseObj(t: String): JSONObject? = try { if (isNull(t)) null else JSONObject(t) } catch (_: Exception) { null }
 
-    // ---------- scriere ----------
+    /** Șterge răspunsurile „vin spre tine" ale unei alarme (frunză cu frunză, cum cer regulile). */
+    private fun delResp(b: String, aid: String) {
+        parseObj(http("GET", "$b/resp/$aid.json").second)?.let { for (k in it.keys()) http("DELETE", "$b/resp/$aid/$k.json") }
+    }
+
+    /** Golește alarmele și prezența unui grup. */
+    private fun purge(code: String) {
+        val b = "${root()}/g/$code"
+        parseObj(http("GET", "$b/sos.json").second)?.let { o -> for (k in o.keys()) { http("DELETE", "$b/sos/$k.json"); delResp(b, k) } }
+        parseObj(http("GET", "$b/presence.json").second)?.let { o -> for (k in o.keys()) http("DELETE", "$b/presence/$k.json") }
+    }
+
+    // ---------- scriere în grupul curent ----------
 
     fun uploadAlert(
         ctx: Context, id: Int, type: Int, lat: Double, lon: Double, hops: Int,
         name: String, uid: String, tsSec: Long, onDone: (Boolean) -> Unit
     ) {
         if (!enabled || !hasInternet(ctx.applicationContext)) { onDone(false); return }
+        val b = base()
         exec.execute {
             val body = JSONObject().apply {
                 put("sosId", id)
@@ -73,15 +99,16 @@ object CloudGateway {
                 put("name", name); put("uid", uid)
                 put("timestamp", tsSec)
             }.toString()
-            onDone(http("PUT", "${base()}/sos/$id.json", body).first in 200..299)
+            onDone(http("PUT", "$b/sos/$id.json", body).first in 200..299)
         }
     }
 
     fun deleteAlert(ctx: Context, id: Int) {
         if (!enabled || !hasInternet(ctx.applicationContext)) return
+        val b = base()
         exec.execute {
-            http("DELETE", "${base()}/sos/$id.json")
-            http("DELETE", "${base()}/resp/$id.json")
+            http("DELETE", "$b/sos/$id.json")
+            delResp(b, id.toString())
         }
     }
 
@@ -89,51 +116,135 @@ object CloudGateway {
         if (!enabled || !Profile.presence || Profile.name.length < 3 || MeshBus.myLat == 0.0 || !hasInternet(ctx.applicationContext)) {
             onDone(false); return
         }
-        exec.execute {
-            val body = JSONObject().apply {
-                put("name", Profile.name); put("uid", Profile.uid)
-                put("lat", MeshBus.myLat); put("lon", MeshBus.myLon)
-                put("src", "apk")
-                put("timestamp", System.currentTimeMillis() / 1000)
-            }.toString()
-            onDone(http("PUT", "${base()}/presence/${Profile.uid}.json", body).first in 200..299)
-        }
+        val b = base()
+        val body = JSONObject().apply {
+            put("name", Profile.name); put("uid", Profile.uid)
+            put("lat", MeshBus.myLat); put("lon", MeshBus.myLon)
+            put("src", "apk")
+            put("timestamp", System.currentTimeMillis() / 1000)
+        }.toString()
+        exec.execute { onDone(http("PUT", "$b/presence/${Profile.uid}.json", body).first in 200..299) }
     }
 
+    /** Apelat ÎNAINTE de schimbarea grupului (adresa se calculează acum, nu mai târziu). */
     fun removePresence(ctx: Context) {
         if (!enabled || !hasInternet(ctx.applicationContext)) return
-        exec.execute { http("DELETE", "${base()}/presence/${Profile.uid}.json") }
+        val url = "${base()}/presence/${Profile.uid}.json"
+        exec.execute { http("DELETE", url) }
     }
 
-    /** "Vin spre tine": cel care răspunde se înscrie la alarmă; victima vede numele lui. */
+    /** „Vin spre tine": cel care răspunde se înscrie la alarmă; victima vede numele lui. */
     fun respond(ctx: Context, alertId: Int, onDone: (Boolean) -> Unit) {
         if (!enabled || Profile.name.length < 3 || !hasInternet(ctx.applicationContext)) { onDone(false); return }
+        val b = base()
+        val body = JSONObject().apply {
+            put("name", Profile.name)
+            put("timestamp", System.currentTimeMillis() / 1000)
+        }.toString()
+        exec.execute { onDone(http("PUT", "$b/resp/$alertId/${Profile.uid}.json", body).first in 200..299) }
+    }
+
+    // ---------- grupuri ----------
+
+    /** Verifică dacă un cod de grup există și nu e șters. */
+    fun checkGroup(ctx: Context, code: String, onResult: (Int) -> Unit) {
+        if (!hasInternet(ctx.applicationContext)) { onResult(GROUP_ERROR); return }
+        val r = root()
         exec.execute {
-            val body = JSONObject().apply {
-                put("name", Profile.name)
-                put("timestamp", System.currentTimeMillis() / 1000)
-            }.toString()
-            onDone(http("PUT", "${base()}/resp/$alertId/${Profile.uid}.json", body).first in 200..299)
+            val (c1, t1) = http("GET", "$r/meta/$code/created.json")
+            if (c1 !in 200..299) { onResult(GROUP_ERROR); return@execute }
+            if (isNull(t1)) { onResult(GROUP_MISSING); return@execute }
+            val (c2, t2) = http("GET", "$r/meta/$code/deleted/ts.json")
+            onResult(if (c2 in 200..299 && !isNull(t2)) GROUP_DELETED else GROUP_OK)
         }
     }
 
-    /**
-     * ADMIN: scrie un marcaj „clearAt" (codul e verificat de regulile Firebase față de /config/adminCode)
-     * și șterge alarmele din cloud. Fără cod corect, Firebase refuză scrierea.
-     */
-    fun adminClear(ctx: Context, code: String, onDone: (Boolean, String) -> Unit) {
-        if (!enabled) { onDone(false, "Setează codul de grup și internetul."); return }
+    /** Grupurile create de mine (din cloud, după jetonul meu secret). */
+    fun listOwned(ctx: Context, onResult: (List<String>?) -> Unit) {
+        if (!hasInternet(ctx.applicationContext)) { onResult(null); return }
+        val r = root(); val token = Profile.ownerToken
+        exec.execute {
+            val (c, t) = http("GET", "$r/owners/$token/groups.json")
+            if (c !in 200..299) { onResult(null); return@execute }
+            onResult(parseObj(t)?.keys()?.asSequence()?.toList() ?: emptyList())
+        }
+    }
+
+    /** Creează un grup nou; regulile Firebase permit maximum 3 grupuri per proprietar. */
+    fun createGroup(ctx: Context, code: String, onDone: (Boolean, String) -> Unit) {
         if (!hasInternet(ctx.applicationContext)) { onDone(false, "Nu există internet."); return }
+        val r = root(); val token = Profile.ownerToken
+        exec.execute {
+            val (c0, t0) = http("GET", "$r/owners/$token/groups.json")
+            if (c0 !in 200..299) { onDone(false, "Eroare de rețea ($c0)."); return@execute }
+            if ((parseObj(t0)?.length() ?: 0) >= MAX_OWNED_GROUPS) {
+                onDone(false, "Ai deja $MAX_OWNED_GROUPS grupuri create. Șterge unul ca să creezi altul."); return@execute
+            }
+            if (http("PUT", "$r/owners/$token/groups/$code.json", "true").first !in 200..299) {
+                onDone(false, "Nu am putut înregistra grupul (limita de $MAX_OWNED_GROUPS?)."); return@execute
+            }
+            val created = http("PUT", "$r/meta/$code/created.json", (System.currentTimeMillis() / 1000).toString())
+            if (created.first !in 200..299) {
+                http("DELETE", "$r/owners/$token/groups/$code.json")
+                onDone(false, "Codul există deja. Alege alt cod."); return@execute
+            }
+            http("PUT", "$r/meta/$code/owner.json", "\"$token\"")
+            onDone(true, "Grup creat.")
+        }
+    }
+
+    /** Proprietarul șterge grupul: golește datele, apoi îl marchează „șters" (cu jetonul lui). */
+    fun deleteOwnGroup(ctx: Context, code: String, onDone: (Boolean, String) -> Unit) {
+        if (!hasInternet(ctx.applicationContext)) { onDone(false, "Nu există internet."); return }
+        val r = root(); val token = Profile.ownerToken
+        exec.execute {
+            purge(code)
+            val body = JSONObject().apply { put("ts", System.currentTimeMillis() / 1000); put("code", token) }.toString()
+            if (http("PUT", "$r/meta/$code/deleted.json", body).first in 200..299) {
+                http("DELETE", "$r/owners/$token/groups/$code.json")
+                onDone(true, "Grupul a fost șters.")
+            } else onDone(false, "Nu ești proprietarul acestui grup.")
+        }
+    }
+
+    // ---------- admin ----------
+
+    /** true = cod corect, false = cod greșit, null = fără rețea. Nu stochează nimic. */
+    fun adminVerify(ctx: Context, code: String, onResult: (Boolean?) -> Unit) {
+        if (!hasInternet(ctx.applicationContext)) { onResult(null); return }
+        val r = root()
+        exec.execute {
+            val c = http("GET", "$r/adminCheck/${enc(code)}.json").first
+            onResult(when { c in 200..299 -> true; c == 401 || c == 403 -> false; else -> null })
+        }
+    }
+
+    /** ADMIN: șterge orice grup, după cod. */
+    fun adminDeleteGroup(ctx: Context, adminCode: String, code: String, onDone: (Boolean, String) -> Unit) {
+        if (!hasInternet(ctx.applicationContext)) { onDone(false, "Nu există internet."); return }
+        val r = root()
+        exec.execute {
+            if (http("GET", "$r/adminCheck/${enc(adminCode)}.json").first !in 200..299) { onDone(false, "Cod admin greșit."); return@execute }
+            purge(code)
+            val body = JSONObject().apply { put("ts", System.currentTimeMillis() / 1000); put("code", adminCode) }.toString()
+            onDone(http("PUT", "$r/meta/$code/deleted.json", body).first in 200..299, "Grupul $code a fost șters.")
+        }
+    }
+
+    /** ADMIN: șterge toate alarmele din grupul curent (marcaj „clearAt" + ștergere). */
+    fun adminClear(ctx: Context, code: String, onDone: (Boolean, String) -> Unit) {
+        if (!enabled) { onDone(false, "Intră întâi într-un grup."); return }
+        if (!hasInternet(ctx.applicationContext)) { onDone(false, "Nu există internet."); return }
+        val b = base()
         exec.execute {
             val nowSec = System.currentTimeMillis() / 1000
             val body = JSONObject().apply { put("ts", nowSec); put("code", code) }.toString()
-            val (c, _) = http("PUT", "${base()}/clearAt.json", body)
+            val (c, _) = http("PUT", "$b/clearAt.json", body)
             if (c !in 200..299) {
                 onDone(false, if (c == 401 || c == 403) "Cod admin greșit (sau lipsește /config/adminCode în Firebase)." else "Eroare de rețea ($c).")
                 return@execute
             }
-            val (_, t) = http("GET", "${base()}/sos.json")
-            parseObj(t)?.let { o -> for (k in o.keys()) { http("DELETE", "${base()}/sos/$k.json"); http("DELETE", "${base()}/resp/$k.json") } }
+            parseObj(http("GET", "$b/sos.json").second)?.let { o -> for (k in o.keys()) { http("DELETE", "$b/sos/$k.json"); delResp(b, k) } }
             MeshBus.applyClear(nowSec)
             onDone(true, "Alarmele au fost șterse.")
         }
@@ -143,8 +254,9 @@ object CloudGateway {
 
     fun fetchAll(ctx: Context, myActiveId: Int, onResult: (Snapshot?) -> Unit) {
         if (!enabled || !hasInternet(ctx.applicationContext)) { onResult(null); return }
+        val b = base()
+        val metaDeleted = "${root()}/meta/${Profile.group}/deleted/ts.json"
         exec.execute {
-            val b = base()
             val now = System.currentTimeMillis()
             val nowSec = now / 1000
 
@@ -168,8 +280,7 @@ object CloudGateway {
             }
 
             val people = ArrayList<MeshBus.Person>()
-            val (_, t2) = http("GET", "$b/presence.json")
-            parseObj(t2)?.let { o ->
+            parseObj(http("GET", "$b/presence.json").second)?.let { o ->
                 for (k in o.keys()) {
                     val p = o.optJSONObject(k) ?: continue
                     val lat = p.optDouble("lat", Double.NaN)
@@ -187,7 +298,8 @@ object CloudGateway {
                     for (k in o.keys()) o.optJSONObject(k)?.let { responders.add("${it.optString("name")}#$k") }
                 }
             }
-            onResult(Snapshot(alerts, people, clearAt, responders))
+            val (cd, td) = http("GET", metaDeleted)
+            onResult(Snapshot(alerts, people, clearAt, responders, cd in 200..299 && !isNull(td)))
         }
     }
 }

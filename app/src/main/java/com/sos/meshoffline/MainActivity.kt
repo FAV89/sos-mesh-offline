@@ -3,10 +3,14 @@ package com.sos.meshoffline
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.graphics.Paint
 import android.graphics.Path
 import android.hardware.GeomagneticField
@@ -56,6 +60,9 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
     private lateinit var arrow: ArrowView
     private lateinit var compassText: TextView
     private lateinit var profileText: TextView
+    private lateinit var euButton: Button
+    private var followMe = false          // „EU" apăsat: harta rămâne centrată pe mine
+    private var adminCode: String? = null  // cod admin verificat în această sesiune (doar în memorie)
 
     private val uiHandler = Handler(Looper.getMainLooper())
     private fun dp(v: Float) = v * resources.displayMetrics.density
@@ -171,8 +178,11 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             val now = System.currentTimeMillis()
             hits.clear()
 
+            val alertUids = HashSet<String>()           // cine are alarmă activă apare DOAR ca punct roșu, nu și ca punct albastru
+            for (a in MeshBus.alerts.values) if (a.age(now) < MeshBus.MAX_AGE_MIN && a.uid.isNotEmpty()) alertUids.add(a.uid)
+
             for (p in MeshBus.people.values) {          // alți utilizatori (activi în ultimele 10 min)
-                if (p.uid == Profile.uid || now / 1000 - p.tsSec > 600) continue
+                if (p.uid == Profile.uid || p.uid in alertUids || now / 1000 - p.tsSec > 600) continue
                 val pt = proj.toPixels(GeoPoint(p.lat, p.lon), null)
                 point(c, pt.x.toFloat(), pt.y.toFloat(), if (p.src == "web") CYAN else BLUE, p.name, false, now, false)
                 hits.add(Hit(pt.x.toFloat(), pt.y.toFloat(), null, p))
@@ -222,7 +232,22 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setupUI()
         checkPermissions()
-        if (Profile.name.length < 3) showProfileDialog(true)
+        if (Profile.name.length < 3) showNameDialog(true)
+    }
+
+    private fun roundBg(color: Int, radiusDp: Float) = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = dp(radiusDp)
+    }
+
+    private fun mapButton(label: String, onClick: () -> Unit) = Button(this).apply {
+        text = label
+        textSize = 12f
+        setTextColor(Color.WHITE)
+        background = roundBg(Color.parseColor("#D91F3A5F"), 12f)
+        setPadding(dp(12f).toInt(), dp(8f).toInt(), dp(12f).toInt(), dp(8f).toInt())
+        minHeight = 0; minimumHeight = 0; minWidth = 0; minimumWidth = 0
+        setOnClickListener { onClick() }
     }
 
     private fun setupUI() {
@@ -233,33 +258,19 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
 
         profileText = TextView(this).apply {
             setTextColor(Color.parseColor("#90CAF9"))
-            textSize = 14f
-            setPadding(24, 20, 24, 0)
+            textSize = 12f
+            setPadding(24, 10, 24, 0)
             gravity = Gravity.CENTER
-            setOnClickListener { showProfileDialog(false) }
+            setOnClickListener { showSettingsMenu() }
         }
 
         statusText = TextView(this).apply {
             text = MeshBus.status
             setTextColor(Color.WHITE)
-            textSize = 14f
-            setPadding(24, 8, 24, 8)
+            textSize = 13f
+            maxLines = 3
+            setPadding(24, 2, 24, 8)
             gravity = Gravity.CENTER
-        }
-
-        arrow = ArrowView(this)
-        compassText = TextView(this).apply {
-            text = "Busolă: nicio alarmă activă"
-            setTextColor(Color.WHITE)
-            textSize = 15f
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(16, 0, 16, 0)
-        }
-        val compassRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(16, 4, 16, 4)
-            addView(arrow, LinearLayout.LayoutParams(150, 150))
-            addView(compassText, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
         }
 
         // Cheie CARTO gratuită (carto.com/basemaps/apikey). Goală = OpenStreetMap standard.
@@ -284,120 +295,306 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             overlays.add(PeopleOverlay())
         }
 
-        fun mapButton(label: String, onClick: () -> Unit) = Button(this).apply {
-            text = label
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#D91F3A5F"))
-            setPadding(20, 10, 20, 10)
-            minHeight = 0; minimumHeight = 0
-            setOnClickListener { onClick() }
-        }
-        val fab = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val lp = { LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 10 } }
-            addView(mapButton("📍 EU") { centerOnMe() })
-            addView(mapButton("⤢ TOATE") { fitAll() }, lp())
-            addView(mapButton("⬇ HARTĂ") { downloadMap() }, lp())
-            addView(mapButton("🔒 ADMIN") { showAdminDialog() }, lp())
-        }
-        val mapBox = FrameLayout(this).apply {
-            addView(map, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-            addView(fab, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.END or Gravity.BOTTOM
-            ).apply { setMargins(0, 0, 16, 16) })
-        }
+        val wrap = FrameLayout.LayoutParams.WRAP_CONTENT
+        val mapBox = FrameLayout(this)
+        mapBox.addView(map, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
+        // --- Busolă: mică, sus-stânga, peste hartă ---
+        arrow = ArrowView(this)
+        compassText = TextView(this).apply {
+            text = "Busolă: nicio alarmă activă"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            setPadding(dp(8f).toInt(), 0, 0, 0)
+        }
+        val compassBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundBg(Color.argb(150, 0, 0, 0), 12f)
+            setPadding(dp(8f).toInt(), dp(6f).toInt(), dp(12f).toInt(), dp(6f).toInt())
+            addView(arrow, LinearLayout.LayoutParams(dp(44f).toInt(), dp(44f).toInt()))
+            addView(compassText)
+        }
+        mapBox.addView(compassBox, FrameLayout.LayoutParams(wrap, wrap, Gravity.START or Gravity.TOP)
+            .apply { setMargins(dp(8f).toInt(), dp(8f).toInt(), 0, 0) })
+
+        // --- Dreapta: ⚙ Meniu, EU, TOATE, HARTĂ ---
+        euButton = mapButton("📍 EU") { toggleFollow() }
+        val rightCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val gap = { LinearLayout.LayoutParams(wrap, wrap).apply { topMargin = dp(8f).toInt() } }
+            addView(mapButton("⚙ MENIU") { showSettingsMenu() })
+            addView(euButton, gap())
+            addView(mapButton("⤢ TOATE") { followMe = false; updateFollowUi(); fitAll() }, gap())
+            addView(mapButton("⬇ HARTĂ") { downloadMap() }, gap())
+        }
+        mapBox.addView(rightCol, FrameLayout.LayoutParams(wrap, wrap, Gravity.END or Gravity.TOP)
+            .apply { setMargins(0, dp(8f).toInt(), dp(8f).toInt(), 0) })
+
+        // --- Stânga jos: tip urgență (mic) + SOS rotunjit + lanternă ---
         typeSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, MeshBus.TYPES)
-            setBackgroundColor(Color.parseColor("#2A2A2A"))
+            background = roundBg(Color.parseColor("#EEFFFFFF"), 10f)
         }
-
         sosButton = Button(this).apply {
+            textSize = 22f
+            typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)
-            textSize = 17f
+            setPadding(0, 0, 0, 0)
+            minHeight = 0; minimumHeight = 0; minWidth = 0; minimumWidth = 0
             setOnClickListener { toggleSos() }
         }
         flashButton = Button(this).apply {
+            textSize = 20f
             setTextColor(Color.WHITE)
-            textSize = 17f
+            setPadding(0, 0, 0, 0)
+            minHeight = 0; minimumHeight = 0; minWidth = 0; minimumWidth = 0
             setOnClickListener { toggleFlash() }
         }
-        val buttons = LinearLayout(this).apply {
+        val sosRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(sosButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f))
-            addView(flashButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(sosButton, LinearLayout.LayoutParams(dp(96f).toInt(), dp(54f).toInt()))
+            addView(flashButton, LinearLayout.LayoutParams(dp(54f).toInt(), dp(54f).toInt()).apply { leftMargin = dp(8f).toInt() })
         }
+        val leftCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(typeSpinner, LinearLayout.LayoutParams(dp(190f).toInt(), dp(38f).toInt()).apply { bottomMargin = dp(8f).toInt() })
+            addView(sosRow)
+        }
+        mapBox.addView(leftCol, FrameLayout.LayoutParams(wrap, wrap, Gravity.START or Gravity.BOTTOM)
+            .apply { setMargins(dp(10f).toInt(), 0, 0, dp(22f).toInt()) })
 
         layout.addView(profileText)
         layout.addView(statusText)
-        layout.addView(compassRow)
         layout.addView(mapBox, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-        layout.addView(typeSpinner)
-        layout.addView(buttons)
         setContentView(layout)
         refreshProfile()
         refreshButtons()
+        updateFollowUi()
+    }
+
+    // ---------- EU: urmărire (harta rămâne centrată pe mine) ----------
+    private fun toggleFollow() {
+        if (MeshBus.myLat == 0.0) { Toast.makeText(this, "Aștept fixarea GPS...", Toast.LENGTH_SHORT).show(); return }
+        followMe = !followMe
+        updateFollowUi()
+        if (followMe) {
+            if (map.zoomLevelDouble < 16.5) map.controller.setZoom(18.0)
+            map.controller.animateTo(GeoPoint(MeshBus.myLat, MeshBus.myLon))
+        }
+    }
+
+    private fun updateFollowUi() {
+        euButton.text = if (followMe) "📍 EU ✓" else "📍 EU"
+        euButton.background = roundBg(Color.parseColor(if (followMe) "#2E9E5B" else "#D91F3A5F"), 12f)
     }
 
     // ---------- Profil ----------
     private fun refreshProfile() {
         profileText.text = if (Profile.name.length >= 3)
-            "Tu: ${Profile.label()}" + (if (Profile.cloudReady) "  •  grup ${Profile.group}" else "  •  doar Bluetooth") + "  (atinge)"
-        else "Setează-ți porecla"
+            "Tu: ${Profile.label()}  •  " + (if (Profile.cloudReady) "grup ${Profile.group}" else "fără grup (doar Bluetooth)") + "  •  atinge pentru meniu"
+        else "Setează-ți porecla (atinge)"
     }
 
-    private fun showProfileDialog(force: Boolean) {
-        val pad = dp(20f).toInt()
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad / 2, pad, 0) }
-        val nameIn = EditText(this).apply {
-            hint = "Poreclă (3-8 litere/cifre)"
+    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+
+    private fun askText(title: String, hintText: String, initial: String, maxLen: Int, positive: String,
+                        secret: Boolean = false, onOk: (String) -> Unit) {
+        val input = EditText(this).apply {
+            this.hint = hintText
+            setText(initial)
+            filters = arrayOf(InputFilter.LengthFilter(maxLen))
+            inputType = if (secret) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                        else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            setPadding(dp(20f).toInt(), dp(16f).toInt(), dp(20f).toInt(), dp(16f).toInt())
+        }
+        AlertDialog.Builder(this).setTitle(title).setView(input)
+            .setPositiveButton(positive) { _, _ -> onOk(input.text.toString()) }
+            .setNegativeButton("Anulează", null).show()
+    }
+
+    /** Poreclă / nume (un singur câmp, 3-8 litere sau cifre). */
+    private fun showNameDialog(force: Boolean) {
+        val input = EditText(this).apply {
+            hint = "Poreclă (3-8 litere/cifre, fără diacritice)"
             setText(Profile.name)
             filters = arrayOf(InputFilter.LengthFilter(8))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            setPadding(dp(20f).toInt(), dp(16f).toInt(), dp(20f).toInt(), dp(16f).toInt())
         }
-        val groupIn = EditText(this).apply {
-            hint = "Cod grup (6-20 litere/cifre), opțional"
-            setText(Profile.group)
-            filters = arrayOf(InputFilter.LengthFilter(20))
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        }
-        val presenceCb = CheckBox(this).apply { text = "Arată-mă pe hartă celorlalți din grup"; isChecked = Profile.presence }
-        val note = TextView(this).apply {
-            text = "ID-ul tău unic: ${Profile.uid}\nCodul de grup: doar cei cu același cod se văd în cloud (aplicație + web). Fără cod funcționează doar Bluetooth."
-            textSize = 12f
-            setPadding(0, 16, 0, 0)
-        }
-        box.addView(nameIn); box.addView(groupIn); box.addView(presenceCb); box.addView(note)
-
-        val b = AlertDialog.Builder(this).setTitle("Profilul tău").setView(box).setCancelable(!force)
+        val b = AlertDialog.Builder(this)
+            .setTitle("Cum te cheamă?")
+            .setMessage("ID-ul tău unic: ${Profile.uid}")
+            .setView(input)
+            .setCancelable(!force)
             .setPositiveButton("Salvează", null)
         if (!force) b.setNegativeButton("Anulează", null)
         val d = b.create()
         d.show()
         d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val n = Profile.sanitizeName(nameIn.text.toString())
-            val g = Profile.sanitizeGroup(groupIn.text.toString())
-            when {
-                n.length < 3 -> nameIn.error = "Minim 3 caractere (litere/cifre, fără diacritice)"
-                g.isNotEmpty() && g.length < 6 -> groupIn.error = "Minim 6 caractere, sau lasă gol"
-                else -> {
-                    val hadPresence = Profile.presence
-                    Profile.save(this, n, g, presenceCb.isChecked)
-                    if (hadPresence && !presenceCb.isChecked) CloudGateway.removePresence(this)
-                    refreshProfile()
-                    d.dismiss()
+            val n = Profile.sanitizeName(input.text.toString())
+            if (n.length < 3) input.error = "Minim 3 caractere (litere sau cifre)"
+            else { Profile.setName(this, n); refreshProfile(); d.dismiss() }
+        }
+    }
+
+    // ---------- Meniu setări ----------
+    private fun showSettingsMenu() {
+        val items = arrayOf(
+            "Schimbă porecla (${Profile.name})",
+            "Grupuri",
+            "Vizibil pe hartă: ${if (Profile.presence) "DA" else "NU"}",
+            if (adminCode == null) "Admin" else "Admin (activ)"
+        )
+        AlertDialog.Builder(this).setTitle("Meniu").setItems(items) { _, which ->
+            when (which) {
+                0 -> showNameDialog(false)
+                1 -> showGroupsMenu()
+                2 -> {
+                    val v = !Profile.presence
+                    if (!v) CloudGateway.removePresence(this)
+                    Profile.setPresence(this, v)
+                    toast(if (v) "Ceilalți din grup te văd pe hartă." else "Nu mai ești vizibil pe hartă.")
+                }
+                3 -> showAdminMenu()
+            }
+        }.show()
+    }
+
+    // ---------- Grupuri ----------
+    private fun switchGroup(code: String) {
+        CloudGateway.removePresence(this)       // mai întâi ies din grupul vechi
+        Profile.setGroup(this, code)
+        MeshBus.dropCloud()
+        refreshProfile()
+    }
+
+    private fun showGroupsMenu() {
+        val cur = if (Profile.cloudReady) "Grup curent: ${Profile.group} (atinge = copiază codul)" else "Fără grup (doar Bluetooth)"
+        val items = arrayOf(cur, "Intră într-un grup (cod)", "Creează grup nou (max ${CloudGateway.MAX_OWNED_GROUPS})",
+            "Șterge un grup creat de mine", "Ieși din grupul curent")
+        AlertDialog.Builder(this).setTitle("Grupuri").setItems(items) { _, which ->
+            when (which) {
+                0 -> if (Profile.cloudReady) {
+                    (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                        .setPrimaryClip(ClipData.newPlainText("grup", Profile.group))
+                    toast("Cod copiat: ${Profile.group}")
+                }
+                1 -> joinGroupDialog()
+                2 -> createGroupDialog()
+                3 -> deleteOwnGroupDialog()
+                4 -> { switchGroup(""); toast("Ai ieșit din grup. Rămâne doar Bluetooth.") }
+            }
+        }.show()
+    }
+
+    private fun joinGroupDialog() {
+        askText("Intră într-un grup", "Cod grup (6-20 litere/cifre)", "", 20, "Intră") { raw ->
+            val code = Profile.sanitizeGroup(raw)
+            if (code.length < 6) { toast("Codul trebuie să aibă minim 6 caractere."); return@askText }
+            toast("Verific grupul...")
+            CloudGateway.checkGroup(this, code) { st ->
+                runOnUiThread {
+                    when (st) {
+                        CloudGateway.GROUP_OK -> { switchGroup(code); toast("Ai intrat în grupul $code.") }
+                        CloudGateway.GROUP_MISSING -> toast("Grupul nu există. Verifică codul sau creează un grup nou.")
+                        CloudGateway.GROUP_DELETED -> toast("Acest grup a fost șters.")
+                        else -> toast("Nu am putut verifica (fără internet?).")
+                    }
                 }
             }
         }
     }
 
-    // ---------- Butoane pe hartă ----------
-    private fun centerOnMe() {
-        if (MeshBus.myLat == 0.0) { Toast.makeText(this, "Aștept fixarea GPS...", Toast.LENGTH_SHORT).show(); return }
-        map.controller.setZoom(18.0)
-        map.controller.animateTo(GeoPoint(MeshBus.myLat, MeshBus.myLon))
+    private fun createGroupDialog() {
+        toast("Verific câte grupuri ai...")
+        CloudGateway.listOwned(this) { owned ->
+            runOnUiThread {
+                when {
+                    owned == null -> toast("Nu am putut verifica (fără internet?).")
+                    owned.size >= CloudGateway.MAX_OWNED_GROUPS ->
+                        toast("Ai deja ${CloudGateway.MAX_OWNED_GROUPS} grupuri create. Șterge unul ca să creezi altul.")
+                    else -> askText("Creează grup nou (${CloudGateway.MAX_OWNED_GROUPS - owned.size} rămase)",
+                        "Cod grup (6-20 litere/cifre)", Profile.randomGroupCode(), 20, "Creează") { raw ->
+                        val code = Profile.sanitizeGroup(raw)
+                        if (code.length < 6) { toast("Codul trebuie să aibă minim 6 caractere."); return@askText }
+                        CloudGateway.createGroup(this, code) { ok, msg ->
+                            runOnUiThread {
+                                if (ok) {
+                                    switchGroup(code)
+                                    (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                                        .setPrimaryClip(ClipData.newPlainText("grup", code))
+                                    toast("Grup creat: $code (codul e copiat). Dă-l celor pe care vrei să-i vezi.")
+                                } else toast(msg)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun deleteOwnGroupDialog() {
+        CloudGateway.listOwned(this) { owned ->
+            runOnUiThread {
+                if (owned == null) { toast("Nu am putut verifica (fără internet?)."); return@runOnUiThread }
+                if (owned.isEmpty()) { toast("Nu ai grupuri create."); return@runOnUiThread }
+                AlertDialog.Builder(this).setTitle("Șterge ce grup?").setItems(owned.toTypedArray()) { _, i ->
+                    val code = owned[i]
+                    AlertDialog.Builder(this).setTitle("Ștergi grupul $code?")
+                        .setMessage("Toate alarmele și pozițiile din grup dispar, iar toți membrii sunt scoși.")
+                        .setPositiveButton("ȘTERGE") { _, _ ->
+                            CloudGateway.deleteOwnGroup(this, code) { ok, msg ->
+                                runOnUiThread {
+                                    toast(msg)
+                                    if (ok && code == Profile.group) switchGroup("")
+                                }
+                            }
+                        }.setNegativeButton("Anulează", null).show()
+                }.show()
+            }
+        }
+    }
+
+    // ---------- Admin ----------
+    private fun showAdminMenu() {
+        if (adminCode == null) {
+            askText("Admin", "Cod admin", "", 40, "Intră", secret = true) { raw ->
+                toast("Verific codul...")
+                CloudGateway.adminVerify(this, raw) { ok ->
+                    runOnUiThread {
+                        when (ok) {
+                            true -> { adminCode = raw; toast("Mod admin activ."); showAdminMenu() }
+                            false -> toast("Cod admin greșit.")
+                            null -> toast("Nu am putut verifica (fără internet?).")
+                        }
+                    }
+                }
+            }
+            return
+        }
+        val items = arrayOf("Șterge toate alarmele din grupul curent", "Șterge un grup (după cod)", "Ieși din modul admin")
+        AlertDialog.Builder(this).setTitle("Admin").setItems(items) { _, which ->
+            val code = adminCode ?: return@setItems
+            when (which) {
+                0 -> AlertDialog.Builder(this).setTitle("Ștergi alarmele?")
+                    .setMessage("Se șterg alarmele active din grupul ${Profile.group}. Cine emite încă un SOS îl va reporni.")
+                    .setPositiveButton("ȘTERGE") { _, _ ->
+                        CloudGateway.adminClear(this, code) { ok, msg -> runOnUiThread { toast(msg) } }
+                    }.setNegativeButton("Anulează", null).show()
+                1 -> askText("Șterge grup", "Cod grup de șters", "", 20, "ȘTERGE") { raw ->
+                    val g = Profile.sanitizeGroup(raw)
+                    if (g.length < 6) { toast("Cod invalid."); return@askText }
+                    CloudGateway.adminDeleteGroup(this, code, g) { ok, msg ->
+                        runOnUiThread {
+                            toast(if (ok) msg else "Nu am putut șterge grupul.")
+                            if (ok && g == Profile.group) switchGroup("")
+                        }
+                    }
+                }
+                2 -> { adminCode = null; toast("Ai ieșit din modul admin.") }
+            }
+        }.show()
     }
 
     private fun fitAll() {
@@ -448,31 +645,6 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             .show()
     }
 
-    private fun showAdminDialog() {
-        if (!CloudGateway.enabled) {
-            Toast.makeText(this, "Admin: setează întâi codul de grup (atinge profilul).", Toast.LENGTH_LONG).show()
-            return
-        }
-        val input = EditText(this).apply {
-            hint = "Cod admin"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setPadding(dp(20f).toInt(), dp(16f).toInt(), dp(20f).toInt(), dp(16f).toInt())
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Admin: șterge toate alarmele")
-            .setMessage("Șterge alarmele active din grupul ${Profile.group}. Cine emite încă un SOS îl va reporni.")
-            .setView(input)
-            .setPositiveButton("ȘTERGE") { _, _ ->
-                val code = input.text.toString()
-                if (code.isBlank()) return@setPositiveButton
-                CloudGateway.adminClear(this, code) { ok, msg ->
-                    runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() }
-                }
-            }
-            .setNegativeButton("Anulează", null)
-            .show()
-    }
-
     private fun showAlertDialog(a: MeshBus.Alert) {
         val now = System.currentTimeMillis()
         val dist = if (MeshBus.myLat != 0.0) {
@@ -484,6 +656,13 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             .setTitle("SOS: ${a.label}")
             .setMessage("${a.typeName}\nDistanță: $dist\nVechime: ${a.age(now)} min\nSalturi: ${a.hops}\n%.5f, %.5f".format(a.lat, a.lon))
             .setNegativeButton("Închide", null)
+        if (adminCode != null) {
+            d.setNeutralButton("ȘTERGE (admin)") { _, _ ->
+                CloudGateway.deleteAlert(this, a.id)
+                MeshBus.removeAlert(a.id)
+                toast("Alarma #${a.id} a fost ștearsă din cloud.")
+            }
+        }
         if (CloudGateway.enabled && Profile.name.length >= 3) {
             d.setPositiveButton("VIN SPRE TINE") { _, _ ->
                 CloudGateway.respond(this, a.id) { ok ->
@@ -499,27 +678,22 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
     // ---------- SOS ----------
     private fun refreshButtons() {
         if (MeshBus.sosActive) {
-            sosButton.text = "OPREȘTE SOS"
-            sosButton.setBackgroundColor(Color.parseColor("#388E3C"))
+            sosButton.text = "STOP"
+            sosButton.background = roundBg(Color.parseColor("#2E9E5B"), 16f)
         } else {
-            sosButton.text = "TRIMITE ALARMA SOS"
-            sosButton.setBackgroundColor(Color.parseColor("#D32F2F"))
+            sosButton.text = "SOS"
+            sosButton.background = roundBg(Color.parseColor("#D32F2F"), 16f)
         }
-        if (torchId == null) {
-            flashButton.text = "FĂRĂ LANTERNĂ"
-            flashButton.isEnabled = false
-            flashButton.setBackgroundColor(Color.DKGRAY)
-        } else if (flashOn) {
-            flashButton.text = "OPREȘTE\nLANTERNA"
-            flashButton.setBackgroundColor(Color.parseColor("#F9A825"))
-        } else {
-            flashButton.text = "LANTERNĂ\nSOS"
-            flashButton.setBackgroundColor(Color.parseColor("#455A64"))
+        flashButton.text = "🔦"
+        when {
+            torchId == null -> { flashButton.isEnabled = false; flashButton.background = roundBg(Color.DKGRAY, 16f) }
+            flashOn -> flashButton.background = roundBg(Color.parseColor("#F9A825"), 16f)
+            else -> flashButton.background = roundBg(Color.parseColor("#455A64"), 16f)
         }
     }
 
     private fun toggleSos() {
-        if (Profile.name.length < 3) { showProfileDialog(true); return }
+        if (Profile.name.length < 3) { showNameDialog(true); return }
         if (!MeshBus.sosActive && MeshBus.myLat == 0.0) {
             Toast.makeText(this, "Așteaptă fixarea semnalului GPS!", Toast.LENGTH_SHORT).show()
             return
@@ -701,6 +875,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             centeredOnce = true
             map.controller.setCenter(GeoPoint(lat, lon))
         }
+        if (followMe) map.controller.setCenter(GeoPoint(lat, lon))   // EU activ: harta rămâne centrată pe mine
         map.invalidate()
         updateCompass()
     }

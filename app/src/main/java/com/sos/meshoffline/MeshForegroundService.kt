@@ -137,7 +137,7 @@ class MeshForegroundService : Service() {
             val list = ArrayList<Packet>()
             if (MeshBus.sosActive && MeshBus.myLat != 0.0) {
                 list.add(Packet(MeshBus.mySosId, 0, MeshBus.mySosType, MeshBus.myLat.toFloat(), MeshBus.myLon.toFloat(), Profile.uid, Profile.name, 0, now))
-                if (online && !ownUploading && now - lastOwnUpload > 60_000) {
+                if (online && !ownUploading && now - lastOwnUpload > 10_000) {
                     ownUploading = true
                     CloudGateway.uploadAlert(this@MeshForegroundService, MeshBus.mySosId, MeshBus.mySosType, MeshBus.myLat, MeshBus.myLon, 0,
                         Profile.name, Profile.uid, now / 1000) { ok ->
@@ -164,7 +164,7 @@ class MeshForegroundService : Service() {
             }
 
             // 4. Prezența mea pe hartă (poziție + poreclă), la 60 s, doar dacă e permis
-            if (online && Profile.presence && !presenceBusy && now - lastPresence > 60_000 && MeshBus.myLat != 0.0) {
+            if (online && Profile.presence && !MeshBus.sosActive && !presenceBusy && now - lastPresence > 60_000 && MeshBus.myLat != 0.0) {
                 presenceBusy = true
                 lastPresence = now
                 CloudGateway.uploadPresence(this@MeshForegroundService) { presenceBusy = false }
@@ -201,6 +201,14 @@ class MeshForegroundService : Service() {
     /** Aplică datele din cloud (pe firul principal). */
     private fun applyCloud(snap: CloudGateway.Snapshot) {
         val now = System.currentTimeMillis()
+        if (snap.groupDeleted) {
+            // grupul a fost șters de proprietar sau de admin: ieșim din el
+            Profile.setGroup(this, "")
+            MeshBus.dropCloud()
+            cloudIds = HashSet()
+            MeshBus.status("Grupul a fost șters. Ești doar pe Bluetooth. (Meniu → Grupuri)")
+            return
+        }
         MeshBus.applyClear(snap.clearAt)
 
         val ids = HashSet<Int>()
