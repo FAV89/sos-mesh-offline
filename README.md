@@ -17,7 +17,8 @@ Pagina web se poate folosi direct în browser, fără instalare (se poate adăug
 - Poziția ta și a celorlalți din grup pe hartă, cu porecla deasupra
 - Unde de șoc roșii pe hartă când cineva trimite SOS; alarma expiră după 30 de minute
 - Șase tipuri de urgență, busolă către cea mai apropiată alarmă, lanternă SOS în Morse
-- Grupuri cu cod (maximum 3 create de o persoană); doar cei cu codul se văd între ei
+- **Comunitatea GLOBAL** (implicit, pentru toți: se văd alarmele tuturor) și **grupuri private** cu nume + parolă (maximum 3 create de o persoană); doar cei care știu ambele se văd între ei
+- Fiecare tip de urgență are culoarea și simbolul lui pe hartă
 - „Vin spre tine": cel care ajută se anunță, iar cel în pericol îl vede
 - Harta se poate descărca pentru uz offline
 - Admin cu cod secret: șterge alarme false sau orice grup
@@ -25,7 +26,7 @@ Pagina web se poate folosi direct în browser, fără instalare (se poate adăug
 ## Primii pași
 
 1. Instalează APK-ul (sau deschide pagina web) și alege o poreclă de 3-8 caractere.
-2. **Meniu → Grupuri**: creează un grup sau intră într-unul cu codul primit.
+2. Ești automat în comunitatea **GLOBAL**. Pentru un grup privat: **Meniu → Grupuri** → creează unul sau intră cu numele și parola primite.
 3. Apasă **SOS**. Butonul **📍 EU** ține harta centrată pe tine, **⤢ TOATE** arată tot.
 
 Pentru Bluetooth, pornește locația și Bluetooth-ul și dezactivează optimizarea bateriei pentru aplicație.

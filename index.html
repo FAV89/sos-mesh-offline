@@ -36,7 +36,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
 #menubox button.cancel{background:#38444f;text-align:center}
 /* puncte pe hartă + unde de șoc */
 .pt{position:relative;width:0;height:0}
-.pt .dot{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--c);border:3px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.5)}
+.pt .dot{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--c);border:3px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font:700 10px/1 system-ui,sans-serif;font-style:normal;color:#fff}
 .pt.sm .dot{left:-7px;top:-7px;width:14px;height:14px}
 .pt .ring{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;border:3px solid var(--c);opacity:0}
 .pt.pulse .ring{animation:wave 2.4s ease-out infinite}
@@ -92,7 +92,10 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   if(!prof.uid) prof.uid=rnd('ABCDEFGHJKLMNPQRSTUVWXYZ23456789',4);
   if(!prof.token) prof.token=rnd('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',24);
   if(prof.presence===undefined) prof.presence=true;
-  if(prof.group&&prof.group.length<6) prof.group='';
+  if(prof.presenceGlobal===undefined) prof.presenceGlobal=false;   // în GLOBAL locația nu se dă străinilor, doar alarmele
+  if(prof.v!==3){prof.v=3;prof.group='GLOBAL';prof.groupName='GLOBAL'}  // toți încep în comunitatea GLOBAL
+  function isGlobal(){return prof.group==='GLOBAL'}
+  function shareOn(){return isGlobal()?prof.presenceGlobal:prof.presence}
   function saveProf(){try{localStorage.setItem('sos-profile',JSON.stringify(prof))}catch(e){}}
   saveProf();
   var adminCode=null;  // doar în memorie, pe durata sesiunii
@@ -101,7 +104,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   function base(){return R()+'/g/'+prof.group}
   function status(t){$('status').textContent=t}
   function renderProfile(){
-    $('profile').textContent=prof.name?('Tu: '+prof.name+'#'+prof.uid+'  •  '+(prof.group?('grup '+prof.group):'fără grup')+'  •  atinge pentru meniu'):'Setează-ți porecla (atinge)';
+    $('profile').textContent=prof.name?('Tu: '+prof.name+'#'+prof.uid+'  •  '+(prof.group?('grup '+(prof.groupName||prof.group)):'fără grup')+'  •  atinge pentru meniu'):'Setează-ți porecla (atinge)';
   }
 
   // ---------- Hartă ----------
@@ -109,11 +112,15 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,
     attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
   var COLORS={red:'#e5393b',blue:'#2f7de1',cyan:'#00acc1'};
-  function html(color,label,pulse,small){
-    return '<div class="pt'+(pulse?' pulse':'')+(small?' sm':'')+'" style="--c:'+COLORS[color]+'">'+
+  var TYPE_COLORS=['#e5393b','#e91e63','#ff6d00','#ffc107','#7e57c2','#8d6e63'];
+  var TYPE_SYMBOLS=['!','✚','🔥','⚠','💧','?'];
+  function html(color,label,pulse,small,sym){
+    var c=COLORS[color]||color;
+    return '<div class="pt'+(pulse?' pulse':'')+(small?' sm':'')+'" style="--c:'+c+'">'+
       (pulse?'<i class="ring"></i><i class="ring r2"></i><i class="ring r3"></i>':'')+
-      '<i class="dot"></i><b class="lbl">'+esc(label)+'</b></div>';
+      '<i class="dot"'+(c==='#ffc107'?' style="color:#000"':'')+'>'+(sym?esc(sym):'')+'</i><b class="lbl">'+esc(label)+'</b></div>';
   }
+  function tIdx(t){var i=TYPES.indexOf(t);return i<0?0:i}
   function upsert(store,key,lat,lon,h,popupFn){
     var m=store[key];
     if(!m){
@@ -134,7 +141,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
 
   function renderMe(){
     if(!me) return;
-    upsert(meM,'me',me.lat,me.lon,html(sosOn?'red':'blue','Tu: '+(prof.name||''),sosOn,false),null);
+    upsert(meM,'me',me.lat,me.lon,sosOn?html(TYPE_COLORS[sosType],'Tu: '+(prof.name||''),true,false,TYPE_SYMBOLS[sosType]):html('blue','Tu: '+(prof.name||''),false,false),null);
   }
 
   if(navigator.geolocation){
@@ -152,7 +159,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   // ---------- Cloud: prezență ----------
   var lastPres=0;
   function syncPresence(force){
-    if(!cloudOn()||!prof.presence||!me||!prof.name||sosOn) return;   // cât emit SOS, poziția mea e în alarmă
+    if(!cloudOn()||!shareOn()||!me||!prof.name||sosOn) return;   // cât emit SOS, poziția mea e în alarmă
     if(!force&&Date.now()-lastPres<30000) return;
     lastPres=Date.now();
     fetch(base()+'/presence/'+prof.uid+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},
@@ -225,11 +232,11 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
     var reqs=[fetch(b+'/sos.json').then(function(r){return r.json()}),
               fetch(b+'/presence.json').then(function(r){return r.json()}),
               fetch(b+'/clearAt/ts.json').then(function(r){return r.json()}),
-              fetch(R()+'/meta/'+g+'/deleted/ts.json').then(function(r){return r.json()})];
+              isGlobal()?Promise.resolve(null):fetch(R()+'/meta/'+g+'/deleted/ts.json').then(function(r){return r.json()})];
     if(sosOn) reqs.push(fetch(b+'/resp/'+sosId+'.json').then(function(r){return r.json()}));
     Promise.all(reqs).then(function(res){
       if(g!==prof.group) return;
-      if(!isNull(res[3])){leaveGroup();status('Grupul a fost șters. Meniu → Grupuri ca să intri în altul.');return}
+      if(!isNull(res[3])){switchGroup('GLOBAL','GLOBAL');status('Grupul a fost șters. Ai revenit în comunitatea GLOBAL.');return}
       var sos=res[0]||{}, pres=res[1]||{}, clearAt=(typeof res[2]==='number')?res[2]:0;
       var t=now(), seen={}, n=0, alertUids={};
       Object.keys(sos).forEach(function(k){
@@ -239,7 +246,8 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
         if(a.uid) alertUids[a.uid]=1;
         if(sosOn&&String(k)===String(sosId)) return;
         n++; seen[k]=1;
-        var m=upsert(alertM,k,a.lat,a.lon,html('red',a.name?a.name+'#'+(a.uid||''):'SOS',true,false),alertPopup);
+        var ti=tIdx(a.type);
+        var m=upsert(alertM,k,a.lat,a.lon,html(TYPE_COLORS[ti],a.name?a.name+'#'+(a.uid||''):'SOS',true,false,TYPE_SYMBOLS[ti]),alertPopup);
         m._a=a;
       });
       prune(alertM,seen);
@@ -301,9 +309,10 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
     openMenu('Meniu',[
       {label:'Schimbă porecla ('+(prof.name||'-')+')',fn:askName},
       {label:'Grupuri',fn:groupsMenu},
-      {label:'Vizibil pe hartă: '+(prof.presence?'DA':'NU'),fn:function(){
-        prof.presence=!prof.presence;saveProf();if(!prof.presence)delPresence();else syncPresence(true);
-        status(prof.presence?'Ceilalți din grup te văd pe hartă.':'Nu mai ești vizibil pe hartă.')}},
+      {label:'Vizibil pe hartă în '+(isGlobal()?'GLOBAL':'acest grup')+': '+(shareOn()?'DA':'NU'),fn:function(){
+        var v=!shareOn(); if(isGlobal()) prof.presenceGlobal=v; else prof.presence=v;
+        saveProf(); if(!v) delPresence(); else syncPresence(true);
+        status(v?'Ceilalți din grup te văd pe hartă.':'Nu mai ești vizibil pe hartă. Alarmele tale rămân vizibile.')}},
       {label:'Copiază mesajul SOS',fn:function(){
         var t=sosText(); if(!t){status('Aștept poziția GPS…');return}
         (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){status('Copiat: '+t)},function(){window.prompt('Copiază mesajul:',t)})}},
@@ -317,48 +326,66 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
 
   // ---------- Grupuri ----------
   function listOwned(){
-    return fetch(R()+'/owners/'+prof.token+'/groups.json').then(function(r){if(!ok(r))throw 0;return r.json()}).then(function(o){return Object.keys(o||{})});
+    return fetch(R()+'/owners/'+prof.token+'/groups.json').then(function(r){if(!ok(r))throw 0;return r.json()}).then(function(o){
+      return Object.keys(o||{}).map(function(k){return {id:k,name:o[k]}});
+    });
   }
-  function switchGroup(code){
-    delPresence(); prof.group=code; saveProf();
+  function switchGroup(gid,name){
+    delPresence(); prof.group=gid; prof.groupName=name; saveProf();
     clearStore(alertM); clearStore(peopleM); renderProfile(); poll(); syncPresence(true);
+  }
+  // identificator secret = SHA-256(nume + ":" + parolă), primele 20 de caractere (ca în aplicație)
+  function groupId(name,pass){
+    var data=new TextEncoder().encode('sosmesh-v1:'+name.toLowerCase()+':'+pass);
+    return crypto.subtle.digest('SHA-256',data).then(function(buf){
+      return Array.prototype.map.call(new Uint8Array(buf),function(x){return ('0'+x.toString(16)).slice(-2)}).join('').slice(0,20);
+    });
+  }
+  function askNamePass(){
+    var name=clean(window.prompt('Nume grup (min 2 litere/cifre):',''),20);
+    if(name.length<2){if(name) window.alert('Numele are minim 2 caractere.');return null}
+    var pass=window.prompt('Parolă grup (min 6 caractere):','');
+    if(!pass||pass.length<6){window.alert('Parola are minim 6 caractere.');return null}
+    return {name:name,pass:pass};
   }
   function groupsMenu(){
     openMenu('Grupuri',[
-      {label:prof.group?('Grup curent: '+prof.group+' (atinge = copiază codul)'):'Fără grup',fn:function(){
-        if(prof.group) (navigator.clipboard?navigator.clipboard.writeText(prof.group):Promise.reject()).then(function(){status('Cod copiat: '+prof.group)},function(){window.prompt('Codul grupului:',prof.group)})}},
-      {label:'Intră într-un grup (cod)',fn:joinGroup},
-      {label:'Creează grup nou (max '+MAX_OWNED+')',fn:createGroup},
+      {label:prof.group?('Grup curent: '+(prof.groupName||prof.group)):'Fără grup'},
+      {label:'Comunitatea GLOBAL (toți utilizatorii)',fn:function(){switchGroup('GLOBAL','GLOBAL');status('Ești în comunitatea GLOBAL. Aici se văd alarmele tuturor.')}},
+      {label:'Intră într-un grup privat (nume + parolă)',fn:joinGroup},
+      {label:'Creează grup privat (max '+MAX_OWNED+')',fn:createGroup},
       {label:'Șterge un grup creat de mine',fn:deleteOwn},
       {label:'Ieși din grupul curent',fn:function(){leaveGroup();status('Ai ieșit din grup.')}}
     ]);
   }
   function joinGroup(){
-    var code=clean(window.prompt('Cod grup (6-20 litere/cifre):',''),20);
-    if(!code) return;
-    if(code.length<6){window.alert('Codul trebuie să aibă minim 6 caractere.');return}
-    Promise.all([fetch(R()+'/meta/'+code+'/created.json').then(function(r){return r.json()}),
-                 fetch(R()+'/meta/'+code+'/deleted/ts.json').then(function(r){return r.json()})]).then(function(a){
-      if(isNull(a[0])){window.alert('Grupul nu există. Verifică codul sau creează un grup nou.');return}
-      if(!isNull(a[1])){window.alert('Acest grup a fost șters.');return}
-      switchGroup(code); status('Ai intrat în grupul '+code+'.');
+    var np=askNamePass(); if(!np) return;
+    groupId(np.name,np.pass).then(function(gid){
+      return Promise.all([fetch(R()+'/meta/'+gid+'/created.json').then(function(r){return r.json()}),
+                          fetch(R()+'/meta/'+gid+'/deleted/ts.json').then(function(r){return r.json()})]).then(function(a){
+        if(isNull(a[0])){window.alert('Nu există un grup cu acest nume și această parolă.');return}
+        if(!isNull(a[1])){window.alert('Acest grup a fost șters.');return}
+        switchGroup(gid,np.name); status('Ai intrat în grupul '+np.name+'.');
+      });
     }).catch(function(){window.alert('Nu am putut verifica (fără internet?).')});
   }
   function createGroup(){
     listOwned().then(function(owned){
       if(owned.length>=MAX_OWNED){window.alert('Ai deja '+MAX_OWNED+' grupuri create. Șterge unul ca să creezi altul.');return}
-      var code=clean(window.prompt('Cod pentru grupul nou (6-20 litere/cifre). Rămase: '+(MAX_OWNED-owned.length),rnd('ABCDEFGHJKLMNPQRSTUVWXYZ23456789',8)),20);
-      if(!code) return;
-      if(code.length<6){window.alert('Codul trebuie să aibă minim 6 caractere.');return}
+      var np=askNamePass(); if(!np) return;
       var token=prof.token, H={'Content-Type':'application/json'};
-      return fetch(R()+'/owners/'+token+'/groups/'+code+'.json',{method:'PUT',headers:H,body:'true'}).then(function(r){
-        if(!ok(r)){window.alert('Nu am putut înregistra grupul.');return}
-        return fetch(R()+'/meta/'+code+'/created.json',{method:'PUT',headers:H,body:String(now())}).then(function(r2){
-          if(!ok(r2)){fetch(R()+'/owners/'+token+'/groups/'+code+'.json',{method:'DELETE'});window.alert('Codul există deja. Alege alt cod.');return}
-          return fetch(R()+'/meta/'+code+'/owner.json',{method:'PUT',headers:H,body:JSON.stringify(token)}).then(function(){
-            switchGroup(code);
-            (navigator.clipboard?navigator.clipboard.writeText(code):Promise.reject()).catch(function(){});
-            status('Grup creat: '+code+' (codul e copiat). Dă-l celor pe care vrei să-i vezi.');
+      return groupId(np.name,np.pass).then(function(gid){
+        return fetch(R()+'/owners/'+token+'/groups/'+gid+'.json',{method:'PUT',headers:H,body:JSON.stringify(np.name)}).then(function(r){
+          if(!ok(r)){window.alert('Nu am putut înregistra grupul.');return}
+          return fetch(R()+'/meta/'+gid+'/created.json',{method:'PUT',headers:H,body:String(now())}).then(function(r2){
+            if(!ok(r2)){fetch(R()+'/owners/'+token+'/groups/'+gid+'.json',{method:'DELETE'});window.alert('Există deja un grup cu acest nume și această parolă. Alege altă parolă.');return}
+            return Promise.all([fetch(R()+'/meta/'+gid+'/owner.json',{method:'PUT',headers:H,body:JSON.stringify(token)}),
+                                fetch(R()+'/meta/'+gid+'/name.json',{method:'PUT',headers:H,body:JSON.stringify(np.name)})]).then(function(){
+              switchGroup(gid,np.name);
+              var inv='Grup: '+np.name+'\nParolă: '+np.pass;
+              (navigator.clipboard?navigator.clipboard.writeText(inv):Promise.reject()).catch(function(){});
+              status('Grup creat: '+np.name+'. Invitația (nume + parolă) e copiată, o poți lipi într-un mesaj. Parola nu se poate recupera.');
+            });
           });
         });
       });
@@ -378,13 +405,13 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   function deleteOwn(){
     listOwned().then(function(owned){
       if(!owned.length){window.alert('Nu ai grupuri create.');return}
-      openMenu('Șterge ce grup?',owned.map(function(code){return {label:code,fn:function(){
-        if(!window.confirm('Ștergi grupul '+code+'? Toate alarmele și pozițiile dispar.')) return;
-        purge(code).then(function(){return markDeleted(code,prof.token)}).then(function(r){
+      openMenu('Șterge ce grup?',owned.map(function(g){return {label:g.name,fn:function(){
+        if(!window.confirm('Ștergi grupul '+g.name+'? Toate alarmele și pozițiile dispar.')) return;
+        purge(g.id).then(function(){return markDeleted(g.id,prof.token)}).then(function(r){
           if(!ok(r)){window.alert('Nu ești proprietarul acestui grup.');return}
-          fetch(R()+'/owners/'+prof.token+'/groups/'+code+'.json',{method:'DELETE'});
-          if(code===prof.group) leaveGroup();
-          status('Grupul '+code+' a fost șters.');
+          fetch(R()+'/owners/'+prof.token+'/groups/'+g.id+'.json',{method:'DELETE'});
+          if(g.id===prof.group) switchGroup('GLOBAL','GLOBAL');
+          status('Grupul '+g.name+' a fost șters.');
         }).catch(function(){window.alert('Eroare de rețea.')});
       }}}));
     }).catch(function(){window.alert('Nu am putut verifica (fără internet?).')});
@@ -396,14 +423,15 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
       var c=window.prompt('Cod admin:'); if(!c) return;
       fetch(R()+'/adminCheck/'+encodeURIComponent(c)+'.json').then(function(r){
         if(ok(r)){adminCode=c;status('Mod admin activ.');adminMenu()}
-        else window.alert('Cod admin greșit.');
+        else if(r.status===401||r.status===403) window.alert('Refuzat (HTTP '+r.status+'): codul nu coincide cu /config/adminCode din Firebase, sau regulile nu sunt publicate.');
+        else window.alert('Eroare Firebase (HTTP '+r.status+').');
       }).catch(function(){window.alert('Nu am putut verifica (fără internet?).')});
       return;
     }
     openMenu('Admin',[
       {label:'Șterge toate alarmele din grupul curent',fn:function(){
         if(!cloudOn()){window.alert('Intră întâi într-un grup.');return}
-        if(!window.confirm('Ștergi alarmele din grupul '+prof.group+'?')) return;
+        if(!window.confirm('Ștergi alarmele din grupul '+(prof.groupName||prof.group)+'?')) return;
         var b=base(), ts=now();
         fetch(b+'/clearAt.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({ts:ts,code:adminCode})}).then(function(r){
           if(!ok(r)){status('Cod admin greșit (sau lipsește /config/adminCode în Firebase).');return}
@@ -412,12 +440,12 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
           }).then(function(){status('Alarmele au fost șterse.');poll()});
         }).catch(function(){status('Eroare de rețea.')});
       }},
-      {label:'Șterge un grup (după cod)',fn:function(){
-        var code=clean(window.prompt('Cod grup de șters:',''),20); if(code.length<6) return;
+      {label:'Șterge un grup (după ID din consola Firebase)',fn:function(){
+        var code=clean(window.prompt('ID grup de șters (Firebase → meta):',''),20); if(code.length<6||code==='GLOBAL') return;
         if(!window.confirm('Ștergi grupul '+code+'?')) return;
         purge(code).then(function(){return markDeleted(code,adminCode)}).then(function(r){
           if(!ok(r)){window.alert('Nu am putut șterge grupul.');return}
-          if(code===prof.group) leaveGroup();
+          if(code===prof.group) switchGroup('GLOBAL','GLOBAL');
           status('Grupul '+code+' a fost șters.');
         }).catch(function(){window.alert('Eroare de rețea.')});
       }},
@@ -428,7 +456,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   // ---------- SOS primit manual (din SMS) ----------
   var KEY='sos-mesh-received';
   function loadM(){try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){return[]}}
-  function showManual(){loadM().forEach(function(a){upsert(manualM,a.id,a.lat,a.lon,html('red','SOS #'+a.id,true,false),function(){return 'SOS #'+esc(a.id)+' (adăugat manual)'})})}
+  function showManual(){loadM().forEach(function(a){upsert(manualM,a.id,a.lat,a.lon,html('red','SOS #'+a.id,true,false,'!'),function(){return 'SOS #'+esc(a.id)+' (adăugat manual)'})})}
   function addManual(){
     var v=window.prompt('Lipește mesajul primit, ex: SOS #123 47.65670,23.58500'); if(!v) return;
     var m=/#?(\d+)\D+(-?\d+(?:\.\d+)?)\s*[,; ]\s*(-?\d+(?:\.\d+)?)/.exec(v);
