@@ -13,21 +13,41 @@ object Profile {
         private set
     var uid = ""
         private set
+    /** Identificatorul grupului folosit în cloud: "GLOBAL" sau un hash secret (nume + parolă). */
     var group = ""
         private set
+    /** Numele afișat al grupului. */
+    var groupName = ""
+        private set
+    /** Vizibil pe hartă în grupurile private (implicit DA). */
     var presence = true
+        private set
+    /** Vizibil pe hartă în comunitatea GLOBAL (implicit NU: locația ta nu e dată străinilor). */
+    var presenceGlobal = false
         private set
     /** Secret, rămâne doar pe telefon. Dovedește că ești proprietarul grupurilor create (max 3 per jeton). */
     var ownerToken = ""
         private set
 
+    const val GLOBAL = "GLOBAL"
+
     val cloudReady: Boolean get() = group.length >= 6
+    val isGlobal: Boolean get() = group == GLOBAL
+    val sharePresence: Boolean get() = if (isGlobal) presenceGlobal else presence
 
     fun load(ctx: Context) {
         val p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         name = p.getString("name", "") ?: ""
-        group = p.getString("group", "") ?: ""
         presence = p.getBoolean("presence", true)
+        presenceGlobal = p.getBoolean("presenceGlobal", false)
+        // prima pornire (sau după actualizare): toți intră în comunitatea GLOBAL
+        if (!p.contains("group2")) {
+            group = GLOBAL; groupName = GLOBAL
+            p.edit().putString("group2", group).putString("groupName2", groupName).apply()
+        } else {
+            group = p.getString("group2", "") ?: ""
+            groupName = p.getString("groupName2", "") ?: ""
+        }
         uid = p.getString("uid", "") ?: ""
         ownerToken = p.getString("token", "") ?: ""
         val r = SecureRandom()
@@ -44,14 +64,16 @@ object Profile {
         prefs(ctx).edit().putString("name", name).apply()
     }
 
-    fun setGroup(ctx: Context, g: String) {
-        group = sanitizeGroup(g)
-        prefs(ctx).edit().putString("group", group).apply()
+    fun setGroup(ctx: Context, gid: String, displayName: String) {
+        group = sanitizeGroup(gid)
+        groupName = if (group.isEmpty()) "" else displayName
+        prefs(ctx).edit().putString("group2", group).putString("groupName2", groupName).apply()
     }
 
-    fun setPresence(ctx: Context, v: Boolean) {
-        presence = v
-        prefs(ctx).edit().putBoolean("presence", v).apply()
+    /** Comută vizibilitatea pentru grupul curent (GLOBAL are setarea lui separată). */
+    fun setSharePresence(ctx: Context, v: Boolean) {
+        if (isGlobal) { presenceGlobal = v; prefs(ctx).edit().putBoolean("presenceGlobal", v).apply() }
+        else { presence = v; prefs(ctx).edit().putBoolean("presence", v).apply() }
     }
 
     /** Doar litere/cifre ASCII (1 byte pe caracter în pachetul Bluetooth), max 8. */
@@ -61,10 +83,18 @@ object Profile {
     fun sanitizeGroup(s: String): String =
         s.filter { it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' }.take(20)
 
-    /** Cod de grup propus automat (8 caractere). */
-    fun randomGroupCode(): String {
-        val r = SecureRandom()
-        return (1..8).map { UID_ALPHABET[r.nextInt(32)] }.joinToString("")
+    /** Nume de grup: 2-20 litere/cifre. */
+    fun sanitizeGroupName(s: String): String =
+        s.filter { it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' }.take(20)
+
+    /**
+     * Identificatorul secret al unui grup privat = SHA-256(nume + ":" + parolă), primele 20 de caractere.
+     * Numele poate fi scurt (min 2), dar fără parolă nu poți calcula identificatorul, deci nu poți citi grupul.
+     */
+    fun groupId(name: String, password: String): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        val bytes = md.digest("sosmesh-v1:${name.lowercase()}:$password".toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }.take(20)
     }
 
     fun label(): String = "$name#$uid"

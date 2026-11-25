@@ -164,7 +164,7 @@ class MeshForegroundService : Service() {
             }
 
             // 4. Prezența mea pe hartă (poziție + poreclă), la 60 s, doar dacă e permis
-            if (online && Profile.presence && !MeshBus.sosActive && !presenceBusy && now - lastPresence > 60_000 && MeshBus.myLat != 0.0) {
+            if (online && Profile.sharePresence && !MeshBus.sosActive && !presenceBusy && now - lastPresence > 60_000 && MeshBus.myLat != 0.0) {
                 presenceBusy = true
                 lastPresence = now
                 CloudGateway.uploadPresence(this@MeshForegroundService) { presenceBusy = false }
@@ -203,10 +203,10 @@ class MeshForegroundService : Service() {
         val now = System.currentTimeMillis()
         if (snap.groupDeleted) {
             // grupul a fost șters de proprietar sau de admin: ieșim din el
-            Profile.setGroup(this, "")
+            Profile.setGroup(this, Profile.GLOBAL, Profile.GLOBAL)   // grup șters: revii în comunitatea GLOBAL
             MeshBus.dropCloud()
             cloudIds = HashSet()
-            MeshBus.status("Grupul a fost șters. Ești doar pe Bluetooth. (Meniu → Grupuri)")
+            MeshBus.status("Grupul a fost șters. Ai revenit în comunitatea GLOBAL.")
             return
         }
         MeshBus.applyClear(snap.clearAt)

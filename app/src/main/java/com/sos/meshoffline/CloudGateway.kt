@@ -113,7 +113,7 @@ object CloudGateway {
     }
 
     fun uploadPresence(ctx: Context, onDone: (Boolean) -> Unit) {
-        if (!enabled || !Profile.presence || Profile.name.length < 3 || MeshBus.myLat == 0.0 || !hasInternet(ctx.applicationContext)) {
+        if (!enabled || !Profile.sharePresence || Profile.name.length < 3 || MeshBus.myLat == 0.0 || !hasInternet(ctx.applicationContext)) {
             onDone(false); return
         }
         val b = base()
@@ -159,37 +159,40 @@ object CloudGateway {
         }
     }
 
-    /** Grupurile create de mine (din cloud, după jetonul meu secret). */
-    fun listOwned(ctx: Context, onResult: (List<String>?) -> Unit) {
+    /** Grupurile create de mine: lista de (identificator, nume). */
+    fun listOwned(ctx: Context, onResult: (List<Pair<String, String>>?) -> Unit) {
         if (!hasInternet(ctx.applicationContext)) { onResult(null); return }
         val r = root(); val token = Profile.ownerToken
         exec.execute {
             val (c, t) = http("GET", "$r/owners/$token/groups.json")
             if (c !in 200..299) { onResult(null); return@execute }
-            onResult(parseObj(t)?.keys()?.asSequence()?.toList() ?: emptyList())
+            val o = parseObj(t)
+            onResult(o?.let { ob -> ob.keys().asSequence().map { it to ob.optString(it, it) }.toList() } ?: emptyList())
         }
     }
 
-    /** Creează un grup nou; regulile Firebase permit maximum 3 grupuri per proprietar. */
-    fun createGroup(ctx: Context, code: String, onDone: (Boolean, String) -> Unit) {
-        if (!hasInternet(ctx.applicationContext)) { onDone(false, "Nu există internet."); return }
+    /** Creează un grup privat (nume min 2 + parolă min 6). Regulile Firebase permit maximum 3 grupuri per proprietar. */
+    fun createGroup(ctx: Context, name: String, password: String, onDone: (Boolean, String, String) -> Unit) {
+        if (!hasInternet(ctx.applicationContext)) { onDone(false, "Nu există internet.", ""); return }
         val r = root(); val token = Profile.ownerToken
+        val gid = Profile.groupId(name, password)
         exec.execute {
             val (c0, t0) = http("GET", "$r/owners/$token/groups.json")
-            if (c0 !in 200..299) { onDone(false, "Eroare de rețea ($c0)."); return@execute }
+            if (c0 !in 200..299) { onDone(false, "Eroare de rețea ($c0).", ""); return@execute }
             if ((parseObj(t0)?.length() ?: 0) >= MAX_OWNED_GROUPS) {
-                onDone(false, "Ai deja $MAX_OWNED_GROUPS grupuri create. Șterge unul ca să creezi altul."); return@execute
+                onDone(false, "Ai deja $MAX_OWNED_GROUPS grupuri create. Șterge unul ca să creezi altul.", ""); return@execute
             }
-            if (http("PUT", "$r/owners/$token/groups/$code.json", "true").first !in 200..299) {
-                onDone(false, "Nu am putut înregistra grupul (limita de $MAX_OWNED_GROUPS?)."); return@execute
+            if (http("PUT", "$r/owners/$token/groups/$gid.json", JSONObject.quote(name)).first !in 200..299) {
+                onDone(false, "Nu am putut înregistra grupul (limita de $MAX_OWNED_GROUPS?).", ""); return@execute
             }
-            val created = http("PUT", "$r/meta/$code/created.json", (System.currentTimeMillis() / 1000).toString())
+            val created = http("PUT", "$r/meta/$gid/created.json", (System.currentTimeMillis() / 1000).toString())
             if (created.first !in 200..299) {
-                http("DELETE", "$r/owners/$token/groups/$code.json")
-                onDone(false, "Codul există deja. Alege alt cod."); return@execute
+                http("DELETE", "$r/owners/$token/groups/$gid.json")
+                onDone(false, "Există deja un grup cu acest nume și această parolă. Alege altă parolă.", ""); return@execute
             }
-            http("PUT", "$r/meta/$code/owner.json", "\"$token\"")
-            onDone(true, "Grup creat.")
+            http("PUT", "$r/meta/$gid/owner.json", JSONObject.quote(token))
+            http("PUT", "$r/meta/$gid/name.json", JSONObject.quote(name))
+            onDone(true, "Grup creat.", gid)
         }
     }
 
@@ -209,14 +212,11 @@ object CloudGateway {
 
     // ---------- admin ----------
 
-    /** true = cod corect, false = cod greșit, null = fără rețea. Nu stochează nimic. */
-    fun adminVerify(ctx: Context, code: String, onResult: (Boolean?) -> Unit) {
-        if (!hasInternet(ctx.applicationContext)) { onResult(null); return }
+    /** Întoarce codul HTTP: 2xx = cod corect, 401/403 = cod greșit, -1 = fără rețea. Nu stochează nimic. */
+    fun adminVerify(ctx: Context, code: String, onResult: (Int) -> Unit) {
+        if (!hasInternet(ctx.applicationContext)) { onResult(-1); return }
         val r = root()
-        exec.execute {
-            val c = http("GET", "$r/adminCheck/${enc(code)}.json").first
-            onResult(when { c in 200..299 -> true; c == 401 || c == 403 -> false; else -> null })
-        }
+        exec.execute { onResult(http("GET", "$r/adminCheck/${enc(code)}.json").first) }
     }
 
     /** ADMIN: șterge orice grup, după cod. */
@@ -256,6 +256,7 @@ object CloudGateway {
         if (!enabled || !hasInternet(ctx.applicationContext)) { onResult(null); return }
         val b = base()
         val metaDeleted = "${root()}/meta/${Profile.group}/deleted/ts.json"
+        val isGlobal = Profile.isGlobal
         exec.execute {
             val now = System.currentTimeMillis()
             val nowSec = now / 1000
@@ -298,8 +299,8 @@ object CloudGateway {
                     for (k in o.keys()) o.optJSONObject(k)?.let { responders.add("${it.optString("name")}#$k") }
                 }
             }
-            val (cd, td) = http("GET", metaDeleted)
-            onResult(Snapshot(alerts, people, clearAt, responders, cd in 200..299 && !isNull(td)))
+            val deleted = if (isGlobal) false else http("GET", metaDeleted).let { it.first in 200..299 && !isNull(it.second) }
+            onResult(Snapshot(alerts, people, clearAt, responders, deleted))
         }
     }
 }

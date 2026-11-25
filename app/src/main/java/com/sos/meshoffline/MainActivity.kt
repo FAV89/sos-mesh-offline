@@ -153,7 +153,9 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         private val BLUE = Color.parseColor("#2F7DE1")
         private val CYAN = Color.parseColor("#00ACC1")
 
-        private fun point(c: Canvas, x: Float, y: Float, color: Int, label: String, pulse: Boolean, now: Long, big: Boolean) {
+        private val sym = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+
+        private fun point(c: Canvas, x: Float, y: Float, color: Int, label: String, pulse: Boolean, now: Long, big: Boolean, symbol: String = "") {
             val r = dp(if (big) 9f else 7f)
             if (pulse) {
                 for (i in 0..2) {   // 3 unde de șoc care se extind și dispar, repetate continuu
@@ -165,6 +167,11 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             }
             dot.color = Color.WHITE; c.drawCircle(x, y, r + dp(2f), dot)
             dot.color = color; c.drawCircle(x, y, r, dot)
+            if (symbol.isNotEmpty()) {            // simbolul tipului de urgență, în interiorul punctului
+                sym.textSize = r * 1.3f
+                sym.color = if (color == MeshBus.TYPE_COLORS[3]) Color.BLACK else Color.WHITE
+                c.drawText(symbol, x, y + sym.textSize * 0.35f, sym)
+            }
             if (label.isNotEmpty()) {
                 val ty = y - r - dp(8f)
                 c.drawText(label, x, ty, txtStroke)
@@ -190,14 +197,17 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             for (a in MeshBus.alerts.values) {           // alarme
                 if (a.age(now) >= MeshBus.MAX_AGE_MIN) continue
                 val pt = proj.toPixels(GeoPoint(a.lat, a.lon), null)
-                point(c, pt.x.toFloat(), pt.y.toFloat(), RED, a.label, true, now, true)
+                val ti = a.type.coerceIn(0, MeshBus.TYPE_COLORS.size - 1)
+                point(c, pt.x.toFloat(), pt.y.toFloat(), MeshBus.TYPE_COLORS[ti], a.label, true, now, true, MeshBus.TYPE_SYMBOLS[ti])
                 hits.add(Hit(pt.x.toFloat(), pt.y.toFloat(), a, null))
             }
             if (MeshBus.myLat != 0.0) {                   // eu
                 val pt = proj.toPixels(GeoPoint(MeshBus.myLat, MeshBus.myLon), null)
                 val sos = MeshBus.sosActive
-                point(c, pt.x.toFloat(), pt.y.toFloat(), if (sos) RED else BLUE,
-                    if (Profile.name.isNotEmpty()) "Tu: ${Profile.name}" else "Tu", sos, now, true)
+                val mi = MeshBus.mySosType.coerceIn(0, MeshBus.TYPE_COLORS.size - 1)
+                point(c, pt.x.toFloat(), pt.y.toFloat(), if (sos) MeshBus.TYPE_COLORS[mi] else BLUE,
+                    if (Profile.name.isNotEmpty()) "Tu: ${Profile.name}" else "Tu", sos, now, true,
+                    if (sos) MeshBus.TYPE_SYMBOLS[mi] else "")
             }
         }
 
@@ -392,7 +402,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
     // ---------- Profil ----------
     private fun refreshProfile() {
         profileText.text = if (Profile.name.length >= 3)
-            "Tu: ${Profile.label()}  •  " + (if (Profile.cloudReady) "grup ${Profile.group}" else "fără grup (doar Bluetooth)") + "  •  atinge pentru meniu"
+            "Tu: ${Profile.label()}  •  " + (if (Profile.cloudReady) "grup ${Profile.groupName}" else "fără grup (doar Bluetooth)") + "  •  atinge pentru meniu"
         else "Setează-ți porecla (atinge)"
     }
 
@@ -443,7 +453,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         val items = arrayOf(
             "Schimbă porecla (${Profile.name})",
             "Grupuri",
-            "Vizibil pe hartă: ${if (Profile.presence) "DA" else "NU"}",
+            "Vizibil pe hartă în ${if (Profile.isGlobal) "GLOBAL" else "acest grup"}: ${if (Profile.sharePresence) "DA" else "NU"}",
             if (adminCode == null) "Admin" else "Admin (activ)"
         )
         AlertDialog.Builder(this).setTitle("Meniu").setItems(items) { _, which ->
@@ -451,10 +461,10 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
                 0 -> showNameDialog(false)
                 1 -> showGroupsMenu()
                 2 -> {
-                    val v = !Profile.presence
+                    val v = !Profile.sharePresence
                     if (!v) CloudGateway.removePresence(this)
-                    Profile.setPresence(this, v)
-                    toast(if (v) "Ceilalți din grup te văd pe hartă." else "Nu mai ești vizibil pe hartă.")
+                    Profile.setSharePresence(this, v)
+                    toast(if (v) "Ceilalți din grup te văd pe hartă." else "Nu mai ești vizibil pe hartă. Alarmele tale rămân vizibile.")
                 }
                 3 -> showAdminMenu()
             }
@@ -462,42 +472,72 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
     }
 
     // ---------- Grupuri ----------
-    private fun switchGroup(code: String) {
+    private fun switchGroup(gid: String, name: String) {
         CloudGateway.removePresence(this)       // mai întâi ies din grupul vechi
-        Profile.setGroup(this, code)
+        Profile.setGroup(this, gid, name)
         MeshBus.dropCloud()
         refreshProfile()
     }
 
+    private fun copyText(label: String, text: String) {
+        (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(label, text))
+    }
+
+    /** Dialog cu două câmpuri: nume de grup + parolă. */
+    private fun askNamePassword(title: String, positive: String, message: String?, onOk: (String, String) -> Unit) {
+        val pad = dp(20f).toInt()
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad / 2, pad, 0) }
+        val nameIn = EditText(this).apply {
+            hint = "Nume grup (min 2 litere/cifre)"
+            filters = arrayOf(InputFilter.LengthFilter(20))
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        val passIn = EditText(this).apply {
+            hint = "Parolă grup (min 6 caractere)"
+            filters = arrayOf(InputFilter.LengthFilter(30))
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        box.addView(nameIn); box.addView(passIn)
+        val b = AlertDialog.Builder(this).setTitle(title).setView(box)
+            .setPositiveButton(positive, null).setNegativeButton("Anulează", null)
+        if (message != null) b.setMessage(message)
+        val d = b.create()
+        d.show()
+        d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val n = Profile.sanitizeGroupName(nameIn.text.toString())
+            val p = passIn.text.toString()
+            when {
+                n.length < 2 -> nameIn.error = "Minim 2 caractere (litere/cifre)"
+                p.length < 6 -> passIn.error = "Parola are minim 6 caractere"
+                else -> { d.dismiss(); onOk(n, p) }
+            }
+        }
+    }
+
     private fun showGroupsMenu() {
-        val cur = if (Profile.cloudReady) "Grup curent: ${Profile.group} (atinge = copiază codul)" else "Fără grup (doar Bluetooth)"
-        val items = arrayOf(cur, "Intră într-un grup (cod)", "Creează grup nou (max ${CloudGateway.MAX_OWNED_GROUPS})",
-            "Șterge un grup creat de mine", "Ieși din grupul curent")
+        val cur = if (Profile.cloudReady) "Grup curent: ${Profile.groupName}" else "Fără grup (doar Bluetooth)"
+        val items = arrayOf(cur, "Comunitatea GLOBAL (toți utilizatorii)", "Intră într-un grup privat (nume + parolă)",
+            "Creează grup privat (max ${CloudGateway.MAX_OWNED_GROUPS})", "Șterge un grup creat de mine", "Ieși din grupul curent")
         AlertDialog.Builder(this).setTitle("Grupuri").setItems(items) { _, which ->
             when (which) {
-                0 -> if (Profile.cloudReady) {
-                    (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                        .setPrimaryClip(ClipData.newPlainText("grup", Profile.group))
-                    toast("Cod copiat: ${Profile.group}")
-                }
-                1 -> joinGroupDialog()
-                2 -> createGroupDialog()
-                3 -> deleteOwnGroupDialog()
-                4 -> { switchGroup(""); toast("Ai ieșit din grup. Rămâne doar Bluetooth.") }
+                1 -> { switchGroup(Profile.GLOBAL, Profile.GLOBAL); toast("Ești în comunitatea GLOBAL. Aici se văd alarmele tuturor.") }
+                2 -> joinGroupDialog()
+                3 -> createGroupDialog()
+                4 -> deleteOwnGroupDialog()
+                5 -> { switchGroup("", ""); toast("Ai ieșit din grup. Rămâne doar Bluetooth.") }
             }
         }.show()
     }
 
     private fun joinGroupDialog() {
-        askText("Intră într-un grup", "Cod grup (6-20 litere/cifre)", "", 20, "Intră") { raw ->
-            val code = Profile.sanitizeGroup(raw)
-            if (code.length < 6) { toast("Codul trebuie să aibă minim 6 caractere."); return@askText }
+        askNamePassword("Intră într-un grup privat", "Intră", null) { name, pass ->
+            val gid = Profile.groupId(name, pass)
             toast("Verific grupul...")
-            CloudGateway.checkGroup(this, code) { st ->
+            CloudGateway.checkGroup(this, gid) { st ->
                 runOnUiThread {
                     when (st) {
-                        CloudGateway.GROUP_OK -> { switchGroup(code); toast("Ai intrat în grupul $code.") }
-                        CloudGateway.GROUP_MISSING -> toast("Grupul nu există. Verifică codul sau creează un grup nou.")
+                        CloudGateway.GROUP_OK -> { switchGroup(gid, name); toast("Ai intrat în grupul $name.") }
+                        CloudGateway.GROUP_MISSING -> toast("Nu există un grup cu acest nume și această parolă.")
                         CloudGateway.GROUP_DELETED -> toast("Acest grup a fost șters.")
                         else -> toast("Nu am putut verifica (fără internet?).")
                     }
@@ -514,17 +554,14 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
                     owned == null -> toast("Nu am putut verifica (fără internet?).")
                     owned.size >= CloudGateway.MAX_OWNED_GROUPS ->
                         toast("Ai deja ${CloudGateway.MAX_OWNED_GROUPS} grupuri create. Șterge unul ca să creezi altul.")
-                    else -> askText("Creează grup nou (${CloudGateway.MAX_OWNED_GROUPS - owned.size} rămase)",
-                        "Cod grup (6-20 litere/cifre)", Profile.randomGroupCode(), 20, "Creează") { raw ->
-                        val code = Profile.sanitizeGroup(raw)
-                        if (code.length < 6) { toast("Codul trebuie să aibă minim 6 caractere."); return@askText }
-                        CloudGateway.createGroup(this, code) { ok, msg ->
+                    else -> askNamePassword("Creează grup privat (${CloudGateway.MAX_OWNED_GROUPS - owned.size} rămase)", "Creează",
+                        "Alege un nume și o parolă. Pe cei pe care vrei să-i vezi îi inviți dându-le ambele. Parola nu se poate recupera.") { name, pass ->
+                        CloudGateway.createGroup(this, name, pass) { ok, msg, gid ->
                             runOnUiThread {
                                 if (ok) {
-                                    switchGroup(code)
-                                    (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                                        .setPrimaryClip(ClipData.newPlainText("grup", code))
-                                    toast("Grup creat: $code (codul e copiat). Dă-l celor pe care vrei să-i vezi.")
+                                    switchGroup(gid, name)
+                                    copyText("grup", "Grup: $name\nParolă: $pass")
+                                    toast("Grup creat: $name. Invitația (nume + parolă) e copiată, o poți lipi într-un mesaj.")
                                 } else toast(msg)
                             }
                         }
@@ -539,15 +576,15 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             runOnUiThread {
                 if (owned == null) { toast("Nu am putut verifica (fără internet?)."); return@runOnUiThread }
                 if (owned.isEmpty()) { toast("Nu ai grupuri create."); return@runOnUiThread }
-                AlertDialog.Builder(this).setTitle("Șterge ce grup?").setItems(owned.toTypedArray()) { _, i ->
-                    val code = owned[i]
-                    AlertDialog.Builder(this).setTitle("Ștergi grupul $code?")
-                        .setMessage("Toate alarmele și pozițiile din grup dispar, iar toți membrii sunt scoși.")
+                AlertDialog.Builder(this).setTitle("Șterge ce grup?").setItems(owned.map { it.second }.toTypedArray()) { _, i ->
+                    val (gid, name) = owned[i]
+                    AlertDialog.Builder(this).setTitle("Ștergi grupul $name?")
+                        .setMessage("Toate alarmele și pozițiile din grup dispar, iar toți membrii sunt mutați în GLOBAL.")
                         .setPositiveButton("ȘTERGE") { _, _ ->
-                            CloudGateway.deleteOwnGroup(this, code) { ok, msg ->
+                            CloudGateway.deleteOwnGroup(this, gid) { ok, msg ->
                                 runOnUiThread {
                                     toast(msg)
-                                    if (ok && code == Profile.group) switchGroup("")
+                                    if (ok && gid == Profile.group) switchGroup(Profile.GLOBAL, Profile.GLOBAL)
                                 }
                             }
                         }.setNegativeButton("Anulează", null).show()
@@ -561,34 +598,35 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         if (adminCode == null) {
             askText("Admin", "Cod admin", "", 40, "Intră", secret = true) { raw ->
                 toast("Verific codul...")
-                CloudGateway.adminVerify(this, raw) { ok ->
+                CloudGateway.adminVerify(this, raw) { http ->
                     runOnUiThread {
-                        when (ok) {
-                            true -> { adminCode = raw; toast("Mod admin activ."); showAdminMenu() }
-                            false -> toast("Cod admin greșit.")
-                            null -> toast("Nu am putut verifica (fără internet?).")
+                        when {
+                            http in 200..299 -> { adminCode = raw; toast("Mod admin activ."); showAdminMenu() }
+                            http == 401 || http == 403 -> toast("Refuzat (HTTP $http): codul nu coincide cu /config/adminCode din Firebase, sau regulile nu sunt publicate.")
+                            http == -1 -> toast("Nu am putut verifica (fără internet?).")
+                            else -> toast("Eroare Firebase (HTTP $http).")
                         }
                     }
                 }
             }
             return
         }
-        val items = arrayOf("Șterge toate alarmele din grupul curent", "Șterge un grup (după cod)", "Ieși din modul admin")
+        val items = arrayOf("Șterge toate alarmele din grupul curent", "Șterge un grup (după ID din consola Firebase)", "Ieși din modul admin")
         AlertDialog.Builder(this).setTitle("Admin").setItems(items) { _, which ->
             val code = adminCode ?: return@setItems
             when (which) {
                 0 -> AlertDialog.Builder(this).setTitle("Ștergi alarmele?")
-                    .setMessage("Se șterg alarmele active din grupul ${Profile.group}. Cine emite încă un SOS îl va reporni.")
+                    .setMessage("Se șterg alarmele active din grupul ${Profile.groupName}. Cine emite încă un SOS îl va reporni.")
                     .setPositiveButton("ȘTERGE") { _, _ ->
                         CloudGateway.adminClear(this, code) { ok, msg -> runOnUiThread { toast(msg) } }
                     }.setNegativeButton("Anulează", null).show()
-                1 -> askText("Șterge grup", "Cod grup de șters", "", 20, "ȘTERGE") { raw ->
+                1 -> askText("Șterge grup", "ID grup (din Firebase → meta)", "", 20, "ȘTERGE") { raw ->
                     val g = Profile.sanitizeGroup(raw)
-                    if (g.length < 6) { toast("Cod invalid."); return@askText }
+                    if (g.length < 6 || g == Profile.GLOBAL) { toast("ID invalid (GLOBAL nu se poate șterge)."); return@askText }
                     CloudGateway.adminDeleteGroup(this, code, g) { ok, msg ->
                         runOnUiThread {
                             toast(if (ok) msg else "Nu am putut șterge grupul.")
-                            if (ok && g == Profile.group) switchGroup("")
+                            if (ok && g == Profile.group) switchGroup(Profile.GLOBAL, Profile.GLOBAL)
                         }
                     }
                 }

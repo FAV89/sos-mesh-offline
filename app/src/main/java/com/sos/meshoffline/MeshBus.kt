@@ -11,6 +11,9 @@ object MeshBus {
         "ACCIDENT", "AM NEVOIE DE APA / MANCARE", "PIERDUT / DEZORIENTAT"
     )
     const val MAX_AGE_MIN = 30
+    /** Fiecare tip de urgență are culoarea și simbolul lui pe hartă. */
+    val TYPE_COLORS = intArrayOf(0xFFE5393B.toInt(), 0xFFE91E63.toInt(), 0xFFFF6D00.toInt(), 0xFFFFC107.toInt(), 0xFF7E57C2.toInt(), 0xFF8D6E63.toInt())
+    val TYPE_SYMBOLS = arrayOf("!", "✚", "🔥", "⚠", "💧", "?")
 
     class Alert(
         val id: Int, val hops: Int, val type: Int, val lat: Double, val lon: Double,
