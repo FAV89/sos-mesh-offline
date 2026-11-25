@@ -215,9 +215,22 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   }
 
   function leaveGroup(){
-    delPresence(); prof.group=''; saveProf();
-    clearStore(alertM); clearStore(peopleM); renderProfile();
-  }
+  delPresence();
+
+  prof.group='RO';
+
+  saveProf();
+
+  clearStore(alertM);
+  clearStore(peopleM);
+
+  renderProfile();
+
+  poll();
+  syncPresence(true);
+
+  status('Ai revenit în grupul ROMANIA.');
+}
 
   function poll(){
     if(!cloudOn()) return;
@@ -441,9 +454,26 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   }
 
   // ---------- pornire ----------
-  TYPES.forEach(function(t){var o=document.createElement('option');o.textContent=t;$('type').appendChild(o)});
-  renderProfile(); showManual(); updateFollowUi();
-  if(!prof.name){setTimeout(function(){askName()},400)}
+TYPES.forEach(function(t){
+  var o=document.createElement('option');
+  o.textContent=t;
+  $('type').appendChild(o);
+});
+
+if(!prof.group){
+   prof.group='GLOBAL';
+   saveProf();
+}
+
+renderProfile();
+showManual();
+updateFollowUi();
+
+if(!prof.name){
+  setTimeout(function(){
+    askName()
+  },400)
+}
 })();
 </script>
 <script>
