@@ -327,7 +327,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   // ---------- Grupuri ----------
   function listOwned(){
     return fetch(R()+'/owners/'+prof.token+'/groups.json').then(function(r){if(!ok(r))throw 0;return r.json()}).then(function(o){
-      return Object.keys(o||{}).map(function(k){return {id:k,name:o[k]}});
+      return Object.keys(o||{}).map(function(k){return {slot:k,id:(o[k]||{}).id,name:(o[k]||{}).name}});
     });
   }
   function switchGroup(gid,name){
@@ -374,11 +374,14 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
       if(owned.length>=MAX_OWNED){window.alert('Ai deja '+MAX_OWNED+' grupuri create. Șterge unul ca să creezi altul.');return}
       var np=askNamePass(); if(!np) return;
       var token=prof.token, H={'Content-Type':'application/json'};
+      var used={}; owned.forEach(function(g){used[g.slot]=1});
+      var slot=['1','2','3'].filter(function(s){return !used[s]})[0];   // 3 sloturi = maxim 3 grupuri
+      if(!slot){window.alert('Ai deja '+MAX_OWNED+' grupuri create.');return}
       return groupId(np.name,np.pass).then(function(gid){
-        return fetch(R()+'/owners/'+token+'/groups/'+gid+'.json',{method:'PUT',headers:H,body:JSON.stringify(np.name)}).then(function(r){
+        return fetch(R()+'/owners/'+token+'/groups/'+slot+'.json',{method:'PUT',headers:H,body:JSON.stringify({id:gid,name:np.name})}).then(function(r){
           if(!ok(r)){window.alert('Nu am putut înregistra grupul.');return}
           return fetch(R()+'/meta/'+gid+'/created.json',{method:'PUT',headers:H,body:String(now())}).then(function(r2){
-            if(!ok(r2)){fetch(R()+'/owners/'+token+'/groups/'+gid+'.json',{method:'DELETE'});window.alert('Există deja un grup cu acest nume și această parolă. Alege altă parolă.');return}
+            if(!ok(r2)){fetch(R()+'/owners/'+token+'/groups/'+slot+'.json',{method:'DELETE'});window.alert('Există deja un grup cu acest nume și această parolă. Alege altă parolă.');return}
             return Promise.all([fetch(R()+'/meta/'+gid+'/owner.json',{method:'PUT',headers:H,body:JSON.stringify(token)}),
                                 fetch(R()+'/meta/'+gid+'/name.json',{method:'PUT',headers:H,body:JSON.stringify(np.name)})]).then(function(){
               switchGroup(gid,np.name);
@@ -409,7 +412,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
         if(!window.confirm('Ștergi grupul '+g.name+'? Toate alarmele și pozițiile dispar.')) return;
         purge(g.id).then(function(){return markDeleted(g.id,prof.token)}).then(function(r){
           if(!ok(r)){window.alert('Nu ești proprietarul acestui grup.');return}
-          fetch(R()+'/owners/'+prof.token+'/groups/'+g.id+'.json',{method:'DELETE'});
+          fetch(R()+'/owners/'+prof.token+'/groups/'+g.slot+'.json',{method:'DELETE'});
           if(g.id===prof.group) switchGroup('GLOBAL','GLOBAL');
           status('Grupul '+g.name+' a fost șters.');
         }).catch(function(){window.alert('Eroare de rețea.')});
