@@ -185,11 +185,15 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
             val now = System.currentTimeMillis()
             hits.clear()
 
-            val alertUids = HashSet<String>()           // cine are alarmă activă apare DOAR ca punct roșu, nu și ca punct albastru
-            for (a in MeshBus.alerts.values) if (a.age(now) < MeshBus.MAX_AGE_MIN && a.uid.isNotEmpty()) alertUids.add(a.uid)
+            // cine are alarmă activă apare DOAR ca punct colorat de alarmă, nu și ca punct de prezență:
+            // se ascunde prezența cu același ID, SAU cu același nume aflată lângă alarmă (ex. după reinstalare, ID-ul se schimbă)
+            val liveAlerts = MeshBus.alerts.values.filter { it.age(now) < MeshBus.MAX_AGE_MIN }
+            val alertUids = HashSet<String>()
+            for (a in liveAlerts) if (a.uid.isNotEmpty()) alertUids.add(a.uid)
 
-            for (p in MeshBus.people.values) {          // alți utilizatori (activi în ultimele 10 min)
-                if (p.uid == Profile.uid || p.uid in alertUids || now / 1000 - p.tsSec > 600) continue
+            for (p in MeshBus.people.values) {          // alți utilizatori (activi în ultimele 5 min)
+                if (p.uid == Profile.uid || p.uid in alertUids || now / 1000 - p.tsSec > 300) continue
+                if (liveAlerts.any { it.name.equals(p.name, true) && Math.abs(it.lat - p.lat) < 0.003 && Math.abs(it.lon - p.lon) < 0.004 }) continue
                 val pt = proj.toPixels(GeoPoint(p.lat, p.lon), null)
                 point(c, pt.x.toFloat(), pt.y.toFloat(), if (p.src == "web") CYAN else BLUE, p.name, false, now, false)
                 hits.add(Hit(pt.x.toFloat(), pt.y.toFloat(), null, p))
@@ -642,7 +646,7 @@ class MainActivity : AppCompatActivity(), MeshBus.Listener, SensorEventListener 
         val pts = ArrayList<GeoPoint>()
         if (MeshBus.myLat != 0.0) pts.add(GeoPoint(MeshBus.myLat, MeshBus.myLon))
         MeshBus.alerts.values.forEach { if (it.age(now) < MeshBus.MAX_AGE_MIN) pts.add(GeoPoint(it.lat, it.lon)) }
-        MeshBus.people.values.forEach { if (it.uid != Profile.uid && now / 1000 - it.tsSec <= 600) pts.add(GeoPoint(it.lat, it.lon)) }
+        MeshBus.people.values.forEach { if (it.uid != Profile.uid && now / 1000 - it.tsSec <= 300) pts.add(GeoPoint(it.lat, it.lon)) }
         if (pts.isEmpty()) { Toast.makeText(this, "Nu există poziții de afișat.", Toast.LENGTH_SHORT).show(); return }
         val box = BoundingBox.fromGeoPoints(pts)
         if (pts.size == 1 || (box.latitudeSpan < 1e-5 && box.longitudeSpan < 1e-5)) {

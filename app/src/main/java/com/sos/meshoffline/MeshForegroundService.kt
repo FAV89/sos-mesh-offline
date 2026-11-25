@@ -355,12 +355,14 @@ class MeshForegroundService : Service() {
                 MeshBus.mySosType = intent.getIntExtra(EXTRA_TYPE, 0)
                 MeshBus.sosActive = true
                 lastOwnUpload = 0L
+                CloudGateway.removePresence(this)      // poziția mea e acum în alarmă: șterg punctul de prezență vechi din cloud
                 MeshBus.status("EMITERE SOS ACTIVĂ #${MeshBus.mySosId}\n${MeshBus.TYPES.getOrElse(MeshBus.mySosType) { "SOS" }}")
             }
             ACTION_SOS_STOP -> {
                 CloudGateway.deleteAlert(this, MeshBus.mySosId)
                 MeshBus.sosActive = false
                 MeshBus.responders = emptyList()
+                lastPresence = 0L                       // prezența se reia imediat
                 MeshBus.status("Alarma oprită. Mesh activ în fundal.")
             }
             ACTION_QUIT -> {
