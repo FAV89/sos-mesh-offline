@@ -92,12 +92,14 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   if(!prof.uid) prof.uid=rnd('ABCDEFGHJKLMNPQRSTUVWXYZ23456789',4);
   if(!prof.token) prof.token=rnd('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',24);
   if(prof.presence===undefined) prof.presence=true;
-  if(prof.group&&prof.group.length<6) prof.group='';
+  //if(prof.group&&prof.group.length<6) prof.group='';
   function saveProf(){try{localStorage.setItem('sos-profile',JSON.stringify(prof))}catch(e){}}
   saveProf();
   var adminCode=null;  // doar în memorie, pe durata sesiunii
 
-  function cloudOn(){return !!(DB_URL&&prof.group&&prof.group.length>=6)}
+  function cloudOn(){
+  return !!(DB_URL && prof.group && prof.group.trim())
+}
   function base(){return R()+'/g/'+prof.group}
   function status(t){$('status').textContent=t}
   function renderProfile(){
@@ -217,7 +219,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   function leaveGroup(){
     delPresence();
 
-    prof.group = prof.country || 'ROMANIA01';
+    prof.group = prof.country || 'RO';
 
     saveProf();
 
