@@ -1,42 +1,134 @@
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#14181c">
-<link rel="apple-touch-icon" href="icon-192.png">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0f14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>SOS Mesh Offline</title>
-<style>/* required styles */.leaflet-pane,.leaflet-tile,.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-tile-container,.leaflet-pane > svg,.leaflet-pane > canvas,.leaflet-zoom-box,.leaflet-image-layer,.leaflet-layer { 	position: absolute; 	left: 0; 	top: 0; 	}.leaflet-container { 	overflow: hidden; 	}.leaflet-tile,.leaflet-marker-icon,.leaflet-marker-shadow { 	-webkit-user-select: none; 	   -moz-user-select: none; 	        user-select: none; 	  -webkit-user-drag: none; 	} /* Prevents IE11 from highlighting tiles in blue */.leaflet-tile::selection { 	background: transparent; } /* Safari renders non-retina tile on retina better with this, but Chrome is worse */.leaflet-safari .leaflet-tile { 	image-rendering: -webkit-optimize-contrast; 	} /* hack that prevents hw layers "stretching" when loading new tiles */.leaflet-safari .leaflet-tile-container { 	width: 1600px; 	height: 1600px; 	-webkit-transform-origin: 0 0; 	}.leaflet-marker-icon,.leaflet-marker-shadow { 	display: block; 	} /* .leaflet-container svg: reset svg max-width decleration shipped in Joomla! (joomla.org) 3.x */ /* .leaflet-container img: map is broken in FF if you have max-width: 100% on tiles */.leaflet-container .leaflet-overlay-pane svg { 	max-width: none !important; 	max-height: none !important; 	}.leaflet-container .leaflet-marker-pane img,.leaflet-container .leaflet-shadow-pane img,.leaflet-container .leaflet-tile-pane img,.leaflet-container img.leaflet-image-layer,.leaflet-container .leaflet-tile { 	max-width: none !important; 	max-height: none !important; 	width: auto; 	padding: 0; 	}.leaflet-container img.leaflet-tile { 	/* See: https://bugs.chromium.org/p/chromium/issues/detail?id=600120 */ 	mix-blend-mode: plus-lighter; }.leaflet-container.leaflet-touch-zoom { 	-ms-touch-action: pan-x pan-y; 	touch-action: pan-x pan-y; 	}.leaflet-container.leaflet-touch-drag { 	-ms-touch-action: pinch-zoom; 	/* Fallback for FF which doesn't support pinch-zoom */ 	touch-action: none; 	touch-action: pinch-zoom; }.leaflet-container.leaflet-touch-drag.leaflet-touch-zoom { 	-ms-touch-action: none; 	touch-action: none; }.leaflet-container { 	-webkit-tap-highlight-color: transparent; }.leaflet-container a { 	-webkit-tap-highlight-color: rgba(51, 181, 229, 0.4); }.leaflet-tile { 	filter: inherit; 	visibility: hidden; 	}.leaflet-tile-loaded { 	visibility: inherit; 	}.leaflet-zoom-box { 	width: 0; 	height: 0; 	-moz-box-sizing: border-box; 	     box-sizing: border-box; 	z-index: 800; 	} /* workaround for https://bugzilla.mozilla.org/show_bug.cgi?id=888319 */.leaflet-overlay-pane svg { 	-moz-user-select: none; 	}.leaflet-pane         { z-index: 400; }.leaflet-tile-pane    { z-index: 200; }.leaflet-overlay-pane { z-index: 400; }.leaflet-shadow-pane  { z-index: 500; }.leaflet-marker-pane  { z-index: 600; }.leaflet-tooltip-pane   { z-index: 650; }.leaflet-popup-pane   { z-index: 700; }.leaflet-map-pane canvas { z-index: 100; }.leaflet-map-pane svg    { z-index: 200; }.leaflet-vml-shape { 	width: 1px; 	height: 1px; 	}.lvml { 	behavior: url(#default#VML); 	display: inline-block; 	position: absolute; 	} /* control positioning */.leaflet-control { 	position: relative; 	z-index: 800; 	pointer-events: visiblePainted; /* IE 9-10 doesn't have auto */ 	pointer-events: auto; 	}.leaflet-top,.leaflet-bottom { 	position: absolute; 	z-index: 1000; 	pointer-events: none; 	}.leaflet-top { 	top: 0; 	}.leaflet-right { 	right: 0; 	}.leaflet-bottom { 	bottom: 0; 	}.leaflet-left { 	left: 0; 	}.leaflet-control { 	float: left; 	clear: both; 	}.leaflet-right .leaflet-control { 	float: right; 	}.leaflet-top .leaflet-control { 	margin-top: 10px; 	}.leaflet-bottom .leaflet-control { 	margin-bottom: 10px; 	}.leaflet-left .leaflet-control { 	margin-left: 10px; 	}.leaflet-right .leaflet-control { 	margin-right: 10px; 	} /* zoom and fade animations */.leaflet-fade-anim .leaflet-popup { 	opacity: 0; 	-webkit-transition: opacity 0.2s linear; 	   -moz-transition: opacity 0.2s linear; 	        transition: opacity 0.2s linear; 	}.leaflet-fade-anim .leaflet-map-pane .leaflet-popup { 	opacity: 1; 	}.leaflet-zoom-animated { 	-webkit-transform-origin: 0 0; 	    -ms-transform-origin: 0 0; 	        transform-origin: 0 0; 	} svg.leaflet-zoom-animated { 	will-change: transform; }.leaflet-zoom-anim .leaflet-zoom-animated { 	-webkit-transition: -webkit-transform 0.25s cubic-bezier(0,0,0.25,1); 	   -moz-transition:    -moz-transform 0.25s cubic-bezier(0,0,0.25,1); 	        transition:         transform 0.25s cubic-bezier(0,0,0.25,1); 	}.leaflet-zoom-anim .leaflet-tile,.leaflet-pan-anim .leaflet-tile { 	-webkit-transition: none; 	   -moz-transition: none; 	        transition: none; 	}.leaflet-zoom-anim .leaflet-zoom-hide { 	visibility: hidden; 	} /* cursors */.leaflet-interactive { 	cursor: pointer; 	}.leaflet-grab { 	cursor: -webkit-grab; 	cursor:    -moz-grab; 	cursor:         grab; 	}.leaflet-crosshair,.leaflet-crosshair .leaflet-interactive { 	cursor: crosshair; 	}.leaflet-popup-pane,.leaflet-control { 	cursor: auto; 	}.leaflet-dragging .leaflet-grab,.leaflet-dragging .leaflet-grab .leaflet-interactive,.leaflet-dragging .leaflet-marker-draggable { 	cursor: move; 	cursor: -webkit-grabbing; 	cursor:    -moz-grabbing; 	cursor:         grabbing; 	} /* marker & overlays interactivity */.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-image-layer,.leaflet-pane > svg path,.leaflet-tile-container { 	pointer-events: none; 	}.leaflet-marker-icon.leaflet-interactive,.leaflet-image-layer.leaflet-interactive,.leaflet-pane > svg path.leaflet-interactive, svg.leaflet-image-layer.leaflet-interactive path { 	pointer-events: visiblePainted; /* IE 9-10 doesn't have auto */ 	pointer-events: auto; 	} /* visual tweaks */.leaflet-container { 	background: #ddd; 	outline-offset: 1px; 	}.leaflet-container a { 	color: #0078A8; 	}.leaflet-zoom-box { 	border: 2px dotted #38f; 	background: rgba(255,255,255,0.5); 	} /* general typography */.leaflet-container { 	font-family: "Helvetica Neue", Arial, Helvetica, sans-serif; 	font-size: 12px; 	font-size: 0.75rem; 	line-height: 1.5; 	} /* general toolbar styles */.leaflet-bar { 	box-shadow: 0 1px 5px rgba(0,0,0,0.65); 	border-radius: 4px; 	}.leaflet-bar a { 	background-color: #fff; 	border-bottom: 1px solid #ccc; 	width: 26px; 	height: 26px; 	line-height: 26px; 	display: block; 	text-align: center; 	text-decoration: none; 	color: black; 	}.leaflet-bar a,.leaflet-control-layers-toggle { 	background-position: 50% 50%; 	background-repeat: no-repeat; 	display: block; 	}.leaflet-bar a:hover,.leaflet-bar a:focus { 	background-color: #f4f4f4; 	}.leaflet-bar a:first-child { 	border-top-left-radius: 4px; 	border-top-right-radius: 4px; 	}.leaflet-bar a:last-child { 	border-bottom-left-radius: 4px; 	border-bottom-right-radius: 4px; 	border-bottom: none; 	}.leaflet-bar a.leaflet-disabled { 	cursor: default; 	background-color: #f4f4f4; 	color: #bbb; 	}.leaflet-touch .leaflet-bar a { 	width: 30px; 	height: 30px; 	line-height: 30px; 	}.leaflet-touch .leaflet-bar a:first-child { 	border-top-left-radius: 2px; 	border-top-right-radius: 2px; 	}.leaflet-touch .leaflet-bar a:last-child { 	border-bottom-left-radius: 2px; 	border-bottom-right-radius: 2px; 	} /* zoom control */.leaflet-control-zoom-in,.leaflet-control-zoom-out { 	font: bold 18px 'Lucida Console', Monaco, monospace; 	text-indent: 1px; 	}.leaflet-touch .leaflet-control-zoom-in, .leaflet-touch .leaflet-control-zoom-out  { 	font-size: 22px; 	} /* layers control */.leaflet-control-layers { 	box-shadow: 0 1px 5px rgba(0,0,0,0.4); 	background: #fff; 	border-radius: 5px; 	}.leaflet-control-layers-toggle { 	background-image: url(images/layers.png); 	width: 36px; 	height: 36px; 	}.leaflet-retina .leaflet-control-layers-toggle { 	background-image: url(images/layers-2x.png); 	background-size: 26px 26px; 	}.leaflet-touch .leaflet-control-layers-toggle { 	width: 44px; 	height: 44px; 	}.leaflet-control-layers .leaflet-control-layers-list,.leaflet-control-layers-expanded .leaflet-control-layers-toggle { 	display: none; 	}.leaflet-control-layers-expanded .leaflet-control-layers-list { 	display: block; 	position: relative; 	}.leaflet-control-layers-expanded { 	padding: 6px 10px 6px 6px; 	color: #333; 	background: #fff; 	}.leaflet-control-layers-scrollbar { 	overflow-y: scroll; 	overflow-x: hidden; 	padding-right: 5px; 	}.leaflet-control-layers-selector { 	margin-top: 2px; 	position: relative; 	top: 1px; 	}.leaflet-control-layers label { 	display: block; 	font-size: 13px; 	font-size: 1.08333em; 	}.leaflet-control-layers-separator { 	height: 0; 	border-top: 1px solid #ddd; 	margin: 5px -10px 5px -6px; 	} /* Default icon URLs */.leaflet-default-icon-path { /* used only in path-guessing heuristic, see L.Icon.Default */ 	background-image: url(images/marker-icon.png); 	} /* attribution and scale controls */.leaflet-container .leaflet-control-attribution { 	background: #fff; 	background: rgba(255, 255, 255, 0.8); 	margin: 0; 	}.leaflet-control-attribution,.leaflet-control-scale-line { 	padding: 0 5px; 	color: #333; 	line-height: 1.4; 	}.leaflet-control-attribution a { 	text-decoration: none; 	}.leaflet-control-attribution a:hover,.leaflet-control-attribution a:focus { 	text-decoration: underline; 	}.leaflet-attribution-flag { 	display: inline !important; 	vertical-align: baseline !important; 	width: 1em; 	height: 0.6669em; 	}.leaflet-left .leaflet-control-scale { 	margin-left: 5px; 	}.leaflet-bottom .leaflet-control-scale { 	margin-bottom: 5px; 	}.leaflet-control-scale-line { 	border: 2px solid #777; 	border-top: none; 	line-height: 1.1; 	padding: 2px 5px 1px; 	white-space: nowrap; 	-moz-box-sizing: border-box; 	     box-sizing: border-box; 	background: rgba(255, 255, 255, 0.8); 	text-shadow: 1px 1px #fff; 	}.leaflet-control-scale-line:not(:first-child) { 	border-top: 2px solid #777; 	border-bottom: none; 	margin-top: -2px; 	}.leaflet-control-scale-line:not(:first-child):not(:last-child) { 	border-bottom: 2px solid #777; 	}.leaflet-touch .leaflet-control-attribution,.leaflet-touch .leaflet-control-layers,.leaflet-touch .leaflet-bar { 	box-shadow: none; 	}.leaflet-touch .leaflet-control-layers,.leaflet-touch .leaflet-bar { 	border: 2px solid rgba(0,0,0,0.2); 	background-clip: padding-box; 	} /* popup */.leaflet-popup { 	position: absolute; 	text-align: center; 	margin-bottom: 20px; 	}.leaflet-popup-content-wrapper { 	padding: 1px; 	text-align: left; 	border-radius: 12px; 	}.leaflet-popup-content { 	margin: 13px 24px 13px 20px; 	line-height: 1.3; 	font-size: 13px; 	font-size: 1.08333em; 	min-height: 1px; 	}.leaflet-popup-content p { 	margin: 17px 0; 	margin: 1.3em 0; 	}.leaflet-popup-tip-container { 	width: 40px; 	height: 20px; 	position: absolute; 	left: 50%; 	margin-top: -1px; 	margin-left: -20px; 	overflow: hidden; 	pointer-events: none; 	}.leaflet-popup-tip { 	width: 17px; 	height: 17px; 	padding: 1px; 	margin: -10px auto 0; 	pointer-events: auto; 	-webkit-transform: rotate(45deg); 	   -moz-transform: rotate(45deg); 	    -ms-transform: rotate(45deg); 	        transform: rotate(45deg); 	}.leaflet-popup-content-wrapper,.leaflet-popup-tip { 	background: white; 	color: #333; 	box-shadow: 0 3px 14px rgba(0,0,0,0.4); 	}.leaflet-container a.leaflet-popup-close-button { 	position: absolute; 	top: 0; 	right: 0; 	border: none; 	text-align: center; 	width: 24px; 	height: 24px; 	font: 16px/24px Tahoma, Verdana, sans-serif; 	color: #757575; 	text-decoration: none; 	background: transparent; 	}.leaflet-container a.leaflet-popup-close-button:hover,.leaflet-container a.leaflet-popup-close-button:focus { 	color: #585858; 	}.leaflet-popup-scrolled { 	overflow: auto; 	}.leaflet-oldie .leaflet-popup-content-wrapper { 	-ms-zoom: 1; 	}.leaflet-oldie .leaflet-popup-tip { 	width: 24px; 	margin: 0 auto; 	-ms-filter: "progid:DXImageTransform.Microsoft.Matrix(M11=0.70710678, M12=0.70710678, M21=-0.70710678, M22=0.70710678)"; 	filter: progid:DXImageTransform.Microsoft.Matrix(M11=0.70710678, M12=0.70710678, M21=-0.70710678, M22=0.70710678); 	}.leaflet-oldie .leaflet-control-zoom,.leaflet-oldie .leaflet-control-layers,.leaflet-oldie .leaflet-popup-content-wrapper,.leaflet-oldie .leaflet-popup-tip { 	border: 1px solid #999; 	} /* div icon */.leaflet-div-icon { 	background: #fff; 	border: 1px solid #666; 	} /* Tooltip */ /* Base styles for the element that has a tooltip */.leaflet-tooltip { 	position: absolute; 	padding: 6px; 	background-color: #fff; 	border: 1px solid #fff; 	border-radius: 3px; 	color: #222; 	white-space: nowrap; 	-webkit-user-select: none; 	-moz-user-select: none; 	-ms-user-select: none; 	user-select: none; 	pointer-events: none; 	box-shadow: 0 1px 3px rgba(0,0,0,0.4); 	}.leaflet-tooltip.leaflet-interactive { 	cursor: pointer; 	pointer-events: auto; 	}.leaflet-tooltip-top:before,.leaflet-tooltip-bottom:before,.leaflet-tooltip-left:before,.leaflet-tooltip-right:before { 	position: absolute; 	pointer-events: none; 	border: 6px solid transparent; 	background: transparent; 	content: ""; 	} /* Directions */.leaflet-tooltip-bottom { 	margin-top: 6px; }.leaflet-tooltip-top { 	margin-top: -6px; }.leaflet-tooltip-bottom:before,.leaflet-tooltip-top:before { 	left: 50%; 	margin-left: -6px; 	}.leaflet-tooltip-top:before { 	bottom: 0; 	margin-bottom: -12px; 	border-top-color: #fff; 	}.leaflet-tooltip-bottom:before { 	top: 0; 	margin-top: -12px; 	margin-left: -6px; 	border-bottom-color: #fff; 	}.leaflet-tooltip-left { 	margin-left: -6px; }.leaflet-tooltip-right { 	margin-left: 6px; }.leaflet-tooltip-left:before,.leaflet-tooltip-right:before { 	top: 50%; 	margin-top: -6px; 	}.leaflet-tooltip-left:before { 	right: 0; 	margin-right: -12px; 	border-left-color: #fff; 	}.leaflet-tooltip-right:before { 	left: 0; 	margin-left: -12px; 	border-right-color: #fff; 	} /* Printing */ @media print { 	/* Prevent printers from removing background-images of controls. */ 	.leaflet-control { 		-webkit-print-color-adjust: exact; 		print-color-adjust: exact; 		} 	} :root{--bg:#14181c;--panel:#1d242b;--text:#eef2f5;--muted:#9aa7b2;--red:#d32f2f;--green:#2e9e5b;--line:#2c363f}
-*{box-sizing:border-box}
-html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,sans-serif}
-body{display:flex;flex-direction:column}
-header{padding:6px 12px;background:var(--panel);border-bottom:1px solid var(--line);text-align:center}
-#profile{color:#90caf9;font-size:12px;cursor:pointer}
-#status{color:var(--muted);font-size:13px;white-space:pre-line;max-height:3.9em;overflow:hidden}
-#mapwrap{position:relative;flex:1;min-height:200px}
-#map{position:absolute;inset:0;background:#2a3138}
-button,select{font:inherit;border:0;color:#fff;cursor:pointer}
-button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #7ab8ff;outline-offset:2px}
-.fab{position:absolute;z-index:1000;display:flex;flex-direction:column;gap:8px}
-.fab.right{right:10px;top:10px}
-.fab.left{left:10px;bottom:24px}
-.fab.right button{padding:8px 12px;font-size:13px;border-radius:12px;background:rgba(31,58,95,.88)}
-.fab.right button.on{background:var(--green)}
-#type{width:190px;height:38px;border-radius:10px;padding:0 6px;background:rgba(255,255,255,.93);color:#111;font-size:13px}
-.sosrow{display:flex;gap:8px}
-#sos{width:96px;height:54px;border-radius:16px;background:var(--red);font-size:22px;font-weight:800;letter-spacing:1px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
-#sos.on{background:var(--green)}
-/* meniu */
-#menu{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px}
-#menu.show{display:flex}
-#menubox{background:var(--panel);border-radius:14px;width:min(420px,100%);max-height:85vh;overflow:auto;padding:14px}
-#menubox h2{margin:0 0 10px;font-size:17px}
-#menubox button{display:block;width:100%;text-align:left;padding:13px 14px;margin:0 0 8px;border-radius:10px;background:#2b3640;font-size:15px}
-#menubox button.cancel{background:#38444f;text-align:center}
+<style>/* required styles */.leaflet-pane,.leaflet-tile,.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-tile-container,.leaflet-pane > svg,.leaflet-pane > canvas,.leaflet-zoom-box,.leaflet-image-layer,.leaflet-layer { 	position: absolute; 	left: 0; 	top: 0; 	}.leaflet-container { 	overflow: hidden; 	}.leaflet-tile,.leaflet-marker-icon,.leaflet-marker-shadow { 	-webkit-user-select: none; 	   -moz-user-select: none; 	        user-select: none; 	  -webkit-user-drag: none; 	} /* Prevents IE11 from highlighting tiles in blue */.leaflet-tile::selection { 	background: transparent; } /* Safari renders non-retina tile on retina better with this, but Chrome is worse */.leaflet-safari .leaflet-tile { 	image-rendering: -webkit-optimize-contrast; 	} /* hack that prevents hw layers "stretching" when loading new tiles */.leaflet-safari .leaflet-tile-container { 	width: 1600px; 	height: 1600px; 	-webkit-transform-origin: 0 0; 	}.leaflet-marker-icon,.leaflet-marker-shadow { 	display: block; 	} /* .leaflet-container svg: reset svg max-width decleration shipped in Joomla! (joomla.org) 3.x */ /* .leaflet-container img: map is broken in FF if you have max-width: 100% on tiles */.leaflet-container .leaflet-overlay-pane svg { 	max-width: none !important; 	max-height: none !important; 	}.leaflet-container .leaflet-marker-pane img,.leaflet-container .leaflet-shadow-pane img,.leaflet-container .leaflet-tile-pane img,.leaflet-container img.leaflet-image-layer,.leaflet-container .leaflet-tile { 	max-width: none !important; 	max-height: none !important; 	width: auto; 	padding: 0; 	}.leaflet-container img.leaflet-tile { 	/* See: https://bugs.chromium.org/p/chromium/issues/detail?id=600120 */ 	mix-blend-mode: plus-lighter; }.leaflet-container.leaflet-touch-zoom { 	-ms-touch-action: pan-x pan-y; 	touch-action: pan-x pan-y; 	}.leaflet-container.leaflet-touch-drag { 	-ms-touch-action: pinch-zoom; 	/* Fallback for FF which doesn't support pinch-zoom */ 	touch-action: none; 	touch-action: pinch-zoom; }.leaflet-container.leaflet-touch-drag.leaflet-touch-zoom { 	-ms-touch-action: none; 	touch-action: none; }.leaflet-container { 	-webkit-tap-highlight-color: transparent; }.leaflet-container a { 	-webkit-tap-highlight-color: rgba(51, 181, 229, 0.4); }.leaflet-tile { 	filter: inherit; 	visibility: hidden; 	}.leaflet-tile-loaded { 	visibility: inherit; 	}.leaflet-zoom-box { 	width: 0; 	height: 0; 	-moz-box-sizing: border-box; 	     box-sizing: border-box; 	z-index: 800; 	} /* workaround for https://bugzilla.mozilla.org/show_bug.cgi?id=888319 */.leaflet-overlay-pane svg { 	-moz-user-select: none; 	}.leaflet-pane         { z-index: 400; }.leaflet-tile-pane    { z-index: 200; }.leaflet-overlay-pane { z-index: 400; }.leaflet-shadow-pane  { z-index: 500; }.leaflet-marker-pane  { z-index: 600; }.leaflet-tooltip-pane   { z-index: 650; }.leaflet-popup-pane   { z-index: 700; }.leaflet-map-pane canvas { z-index: 100; }.leaflet-map-pane svg    { z-index: 200; }.leaflet-vml-shape { 	width: 1px; 	height: 1px; 	}.lvml { 	behavior: url(#default#VML); 	display: inline-block; 	position: absolute; 	} /* control positioning */.leaflet-control { 	position: relative; 	z-index: 800; 	pointer-events: visiblePainted; /* IE 9-10 doesn't have auto */ 	pointer-events: auto; 	}.leaflet-top,.leaflet-bottom { 	position: absolute; 	z-index: 1000; 	pointer-events: none; 	}.leaflet-top { 	top: 0; 	}.leaflet-right { 	right: 0; 	}.leaflet-bottom { 	bottom: 0; 	}.leaflet-left { 	left: 0; 	}.leaflet-control { 	float: left; 	clear: both; 	}.leaflet-right .leaflet-control { 	float: right; 	}.leaflet-top .leaflet-control { 	margin-top: 10px; 	}.leaflet-bottom .leaflet-control { 	margin-bottom: 10px; 	}.leaflet-left .leaflet-control { 	margin-left: 10px; 	}.leaflet-right .leaflet-control { 	margin-right: 10px; 	} /* zoom and fade animations */.leaflet-fade-anim .leaflet-popup { 	opacity: 0; 	-webkit-transition: opacity 0.2s linear; 	   -moz-transition: opacity 0.2s linear; 	        transition: opacity 0.2s linear; 	}.leaflet-fade-anim .leaflet-map-pane .leaflet-popup { 	opacity: 1; 	}.leaflet-zoom-animated { 	-webkit-transform-origin: 0 0; 	    -ms-transform-origin: 0 0; 	        transform-origin: 0 0; 	} svg.leaflet-zoom-animated { 	will-change: transform; }.leaflet-zoom-anim .leaflet-zoom-animated { 	-webkit-transition: -webkit-transform 0.25s cubic-bezier(0,0,0.25,1); 	   -moz-transition:    -moz-transform 0.25s cubic-bezier(0,0,0.25,1); 	        transition:         transform 0.25s cubic-bezier(0,0,0.25,1); 	}.leaflet-zoom-anim .leaflet-tile,.leaflet-pan-anim .leaflet-tile { 	-webkit-transition: none; 	   -moz-transition: none; 	        transition: none; 	}.leaflet-zoom-anim .leaflet-zoom-hide { 	visibility: hidden; 	} /* cursors */.leaflet-interactive { 	cursor: pointer; 	}.leaflet-grab { 	cursor: -webkit-grab; 	cursor:    -moz-grab; 	cursor:         grab; 	}.leaflet-crosshair,.leaflet-crosshair .leaflet-interactive { 	cursor: crosshair; 	}.leaflet-popup-pane,.leaflet-control { 	cursor: auto; 	}.leaflet-dragging .leaflet-grab,.leaflet-dragging .leaflet-grab .leaflet-interactive,.leaflet-dragging .leaflet-marker-draggable { 	cursor: move; 	cursor: -webkit-grabbing; 	cursor:    -moz-grabbing; 	cursor:         grabbing; 	} /* marker & overlays interactivity */.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-image-layer,.leaflet-pane > svg path,.leaflet-tile-container { 	pointer-events: none; 	}.leaflet-marker-icon.leaflet-interactive,.leaflet-image-layer.leaflet-interactive,.leaflet-pane > svg path.leaflet-interactive, svg.leaflet-image-layer.leaflet-interactive path { 	pointer-events: visiblePainted; /* IE 9-10 doesn't have auto */ 	pointer-events: auto; 	} /* visual tweaks */.leaflet-container { 	background: #ddd; 	outline-offset: 1px; 	}.leaflet-container a { 	color: #0078A8; 	}.leaflet-zoom-box { 	border: 2px dotted #38f; 	background: rgba(255,255,255,0.5); 	} /* general typography */.leaflet-container { 	font-family: "Helvetica Neue", Arial, Helvetica, sans-serif; 	font-size: 12px; 	font-size: 0.75rem; 	line-height: 1.5; 	} /* general toolbar styles */.leaflet-bar { 	box-shadow: 0 1px 5px rgba(0,0,0,0.65); 	border-radius: 4px; 	}.leaflet-bar a { 	background-color: #fff; 	border-bottom: 1px solid #ccc; 	width: 26px; 	height: 26px; 	line-height: 26px; 	display: block; 	text-align: center; 	text-decoration: none; 	color: black; 	}.leaflet-bar a,.leaflet-control-layers-toggle { 	background-position: 50% 50%; 	background-repeat: no-repeat; 	display: block; 	}.leaflet-bar a:hover,.leaflet-bar a:focus { 	background-color: #f4f4f4; 	}.leaflet-bar a:first-child { 	border-top-left-radius: 4px; 	border-top-right-radius: 4px; 	}.leaflet-bar a:last-child { 	border-bottom-left-radius: 4px; 	border-bottom-right-radius: 4px; 	border-bottom: none; 	}.leaflet-bar a.leaflet-disabled { 	cursor: default; 	background-color: #f4f4f4; 	color: #bbb; 	}.leaflet-touch .leaflet-bar a { 	width: 30px; 	height: 30px; 	line-height: 30px; 	}.leaflet-touch .leaflet-bar a:first-child { 	border-top-left-radius: 2px; 	border-top-right-radius: 2px; 	}.leaflet-touch .leaflet-bar a:last-child { 	border-bottom-left-radius: 2px; 	border-bottom-right-radius: 2px; 	} /* zoom control */.leaflet-control-zoom-in,.leaflet-control-zoom-out { 	font: bold 18px 'Lucida Console', Monaco, monospace; 	text-indent: 1px; 	}.leaflet-touch .leaflet-control-zoom-in, .leaflet-touch .leaflet-control-zoom-out  { 	font-size: 22px; 	} /* layers control */.leaflet-control-layers { 	box-shadow: 0 1px 5px rgba(0,0,0,0.4); 	background: #fff; 	border-radius: 5px; 	}.leaflet-control-layers-toggle { 	background-image: url(images/layers.png); 	width: 36px; 	height: 36px; 	}.leaflet-retina .leaflet-control-layers-toggle { 	background-image: url(images/layers-2x.png); 	background-size: 26px 26px; 	}.leaflet-touch .leaflet-control-layers-toggle { 	width: 44px; 	height: 44px; 	}.leaflet-control-layers .leaflet-control-layers-list,.leaflet-control-layers-expanded .leaflet-control-layers-toggle { 	display: none; 	}.leaflet-control-layers-expanded .leaflet-control-layers-list { 	display: block; 	position: relative; 	}.leaflet-control-layers-expanded { 	padding: 6px 10px 6px 6px; 	color: #333; 	background: #fff; 	}.leaflet-control-layers-scrollbar { 	overflow-y: scroll; 	overflow-x: hidden; 	padding-right: 5px; 	}.leaflet-control-layers-selector { 	margin-top: 2px; 	position: relative; 	top: 1px; 	}.leaflet-control-layers label { 	display: block; 	font-size: 13px; 	font-size: 1.08333em; 	}.leaflet-control-layers-separator { 	height: 0; 	border-top: 1px solid #ddd; 	margin: 5px -10px 5px -6px; 	} /* Default icon URLs */.leaflet-default-icon-path { /* used only in path-guessing heuristic, see L.Icon.Default */ 	background-image: url(images/marker-icon.png); 	} /* attribution and scale controls */.leaflet-container .leaflet-control-attribution { 	background: #fff; 	background: rgba(255, 255, 255, 0.8); 	margin: 0; 	}.leaflet-control-attribution,.leaflet-control-scale-line { 	padding: 0 5px; 	color: #333; 	line-height: 1.4; 	}.leaflet-control-attribution a { 	text-decoration: none; 	}.leaflet-control-attribution a:hover,.leaflet-control-attribution a:focus { 	text-decoration: underline; 	}.leaflet-attribution-flag { 	display: inline !important; 	vertical-align: baseline !important; 	width: 1em; 	height: 0.6669em; 	}.leaflet-left .leaflet-control-scale { 	margin-left: 5px; 	}.leaflet-bottom .leaflet-control-scale { 	margin-bottom: 5px; 	}.leaflet-control-scale-line { 	border: 2px solid #777; 	border-top: none; 	line-height: 1.1; 	padding: 2px 5px 1px; 	white-space: nowrap; 	-moz-box-sizing: border-box; 	     box-sizing: border-box; 	background: rgba(255, 255, 255, 0.8); 	text-shadow: 1px 1px #fff; 	}.leaflet-control-scale-line:not(:first-child) { 	border-top: 2px solid #777; 	border-bottom: none; 	margin-top: -2px; 	}.leaflet-control-scale-line:not(:first-child):not(:last-child) { 	border-bottom: 2px solid #777; 	}.leaflet-touch .leaflet-control-attribution,.leaflet-touch .leaflet-control-layers,.leaflet-touch .leaflet-bar { 	box-shadow: none; 	}.leaflet-touch .leaflet-control-layers,.leaflet-touch .leaflet-bar { 	border: 2px solid rgba(0,0,0,0.2); 	background-clip: padding-box; 	} /* popup */.leaflet-popup { 	position: absolute; 	text-align: center; 	margin-bottom: 20px; 	}.leaflet-popup-content-wrapper { 	padding: 1px; 	text-align: left; 	border-radius: 12px; 	}.leaflet-popup-content { 	margin: 13px 24px 13px 20px; 	line-height: 1.3; 	font-size: 13px; 	font-size: 1.08333em; 	min-height: 1px; 	}.leaflet-popup-content p { 	margin: 17px 0; 	margin: 1.3em 0; 	}.leaflet-popup-tip-container { 	width: 40px; 	height: 20px; 	position: absolute; 	left: 50%; 	margin-top: -1px; 	margin-left: -20px; 	overflow: hidden; 	pointer-events: none; 	}.leaflet-popup-tip { 	width: 17px; 	height: 17px; 	padding: 1px; 	margin: -10px auto 0; 	pointer-events: auto; 	-webkit-transform: rotate(45deg); 	   -moz-transform: rotate(45deg); 	    -ms-transform: rotate(45deg); 	        transform: rotate(45deg); 	}.leaflet-popup-content-wrapper,.leaflet-popup-tip { 	background: white; 	color: #333; 	box-shadow: 0 3px 14px rgba(0,0,0,0.4); 	}.leaflet-container a.leaflet-popup-close-button { 	position: absolute; 	top: 0; 	right: 0; 	border: none; 	text-align: center; 	width: 24px; 	height: 24px; 	font: 16px/24px Tahoma, Verdana, sans-serif; 	color: #757575; 	text-decoration: none; 	background: transparent; 	}.leaflet-container a.leaflet-popup-close-button:hover,.leaflet-container a.leaflet-popup-close-button:focus { 	color: #585858; 	}.leaflet-popup-scrolled { 	overflow: auto; 	}.leaflet-oldie .leaflet-popup-content-wrapper { 	-ms-zoom: 1; 	}.leaflet-oldie .leaflet-popup-tip { 	width: 24px; 	margin: 0 auto; 	-ms-filter: "progid:DXImageTransform.Microsoft.Matrix(M11=0.70710678, M12=0.70710678, M21=-0.70710678, M22=0.70710678)"; 	filter: progid:DXImageTransform.Microsoft.Matrix(M11=0.70710678, M12=0.70710678, M21=-0.70710678, M22=0.70710678); 	}.leaflet-oldie .leaflet-control-zoom,.leaflet-oldie .leaflet-control-layers,.leaflet-oldie .leaflet-popup-content-wrapper,.leaflet-oldie .leaflet-popup-tip { 	border: 1px solid #999; 	} /* div icon */.leaflet-div-icon { 	background: #fff; 	border: 1px solid #666; 	} /* Tooltip */ /* Base styles for the element that has a tooltip */.leaflet-tooltip { 	position: absolute; 	padding: 6px; 	background-color: #fff; 	border: 1px solid #fff; 	border-radius: 3px; 	color: #222; 	white-space: nowrap; 	-webkit-user-select: none; 	-moz-user-select: none; 	-ms-user-select: none; 	user-select: none; 	pointer-events: none; 	box-shadow: 0 1px 3px rgba(0,0,0,0.4); 	}.leaflet-tooltip.leaflet-interactive { 	cursor: pointer; 	pointer-events: auto; 	}.leaflet-tooltip-top:before,.leaflet-tooltip-bottom:before,.leaflet-tooltip-left:before,.leaflet-tooltip-right:before { 	position: absolute; 	pointer-events: none; 	border: 6px solid transparent; 	background: transparent; 	content: ""; 	} /* Directions */.leaflet-tooltip-bottom { 	margin-top: 6px; }.leaflet-tooltip-top { 	margin-top: -6px; }.leaflet-tooltip-bottom:before,.leaflet-tooltip-top:before { 	left: 50%; 	margin-left: -6px; 	}.leaflet-tooltip-top:before { 	bottom: 0; 	margin-bottom: -12px; 	border-top-color: #fff; 	}.leaflet-tooltip-bottom:before { 	top: 0; 	margin-top: -12px; 	margin-left: -6px; 	border-bottom-color: #fff; 	}.leaflet-tooltip-left { 	margin-left: -6px; }.leaflet-tooltip-right { 	margin-left: 6px; }.leaflet-tooltip-left:before,.leaflet-tooltip-right:before { 	top: 50%; 	margin-top: -6px; 	}.leaflet-tooltip-left:before { 	right: 0; 	margin-right: -12px; 	border-left-color: #fff; 	}.leaflet-tooltip-right:before { 	left: 0; 	margin-left: -12px; 	border-right-color: #fff; 	} /* Printing */ @media print { 	/* Prevent printers from removing background-images of controls. */ 	.leaflet-control { 		-webkit-print-color-adjust: exact; 		print-color-adjust: exact; 		} 	} :root{
+  --bg:#0a0f14; --panel:#101820; --panel2:#16222c; --line:#22333f;
+  --txt:#e8f1f5; --dim:#8aa3b0; --acc:#2dd4a7; --acc2:#39c0ed;
+  --warn:#ffb020; --danger:#ff4d5e; --ok:#3ddc84;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+button,input,select{font:inherit}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #7ab8ff;outline-offset:2px}
+header{display:flex;align-items:center;gap:10px;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top));background:var(--panel);border-bottom:1px solid var(--line)}
+.logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--danger),#ff8a5c);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff;flex:none}
+header h1{font-size:16px;font-weight:700;letter-spacing:.3px}
+header .sub{font-size:11px;color:var(--dim)}
+.netbadge{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11px;padding:5px 10px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);max-width:48%}
+.netbadge span#netTxt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok);animation:pulse 1.6s infinite;flex:none}
+.dot.off{background:var(--danger);animation:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+main{flex:1;position:relative;overflow:hidden}
+.view{position:absolute;inset:0;display:none;flex-direction:column}
+.view.active{display:flex}
+
+/* HARTA */
+#mapWrap{flex:1;position:relative}
+#map{position:absolute;inset:0;background-color:#0a0f14;
+  background-image:linear-gradient(rgba(45,80,100,.25) 1px,transparent 1px),linear-gradient(90deg,rgba(45,80,100,.25) 1px,transparent 1px);
+  background-size:48px 48px}
+.mapHud{position:absolute;top:10px;left:10px;display:flex;flex-direction:column;gap:6px;pointer-events:none;z-index:1000;max-width:62%}
+.hudChip{background:rgba(16,24,32,.88);border:1px solid var(--line);border-radius:10px;padding:7px 11px;font-size:12px;backdrop-filter:blur(4px)}
+.hudChip b{color:var(--acc)}
+#statusChip{display:none;white-space:pre-line;max-height:5.2em;overflow:hidden;color:var(--dim)}
+.legend{position:absolute;top:10px;right:10px;z-index:1000;background:rgba(16,24,32,.88);border:1px solid var(--line);border-radius:10px;padding:8px 11px;font-size:11px;color:var(--dim);display:flex;flex-direction:column;gap:4px;pointer-events:none}
+.legend span{display:flex;align-items:center;gap:6px}
+.lg{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.mapBtns{position:absolute;right:10px;bottom:34px;z-index:1000;display:flex;flex-direction:column;gap:8px}
+.mbtn{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(16,24,32,.92);color:var(--txt);font-size:19px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.mbtn:active{background:var(--panel2)}
+.mbtn.on{background:#134e3f;border-color:var(--acc);color:var(--acc)}
+.sosFloat{position:absolute;left:12px;bottom:34px;z-index:1000;background:linear-gradient(135deg,#ff4d5e,#ff7a45);border:none;color:#fff;font-weight:800;font-size:15px;padding:14px 22px;border-radius:16px;cursor:pointer;box-shadow:0 6px 22px rgba(255,77,94,.4);letter-spacing:1px}
+.sosFloat:active{transform:scale(.96)}
+.sosFloat.armed{background:linear-gradient(135deg,#3ddc84,#2dd4a7);box-shadow:0 6px 22px rgba(61,220,132,.35)}
+.leaflet-container{font:inherit;background:transparent}
+.leaflet-control-attribution{font-size:10px;background:rgba(16,24,32,.8)!important;color:var(--dim)!important}
+.leaflet-control-attribution a{color:var(--acc2)!important}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel);color:var(--txt);border:1px solid var(--line)}
+.leaflet-popup-content{font-size:13px;line-height:1.45}
+
+/* MESAJE (jurnal de evenimente reale) */
+#feedList{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+.msg{max-width:94%;padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.4;word-wrap:break-word}
+.msg .meta{font-size:10px;color:var(--dim);margin-top:4px}
+.msg.sos{align-self:center;background:rgba(255,77,94,.14);border:1px solid var(--danger);color:#ffd7db;text-align:center}
+.msg.sos .meta{text-align:center}
+.msg.sys{align-self:center;background:transparent;border:none;color:var(--dim);font-size:12px;padding:2px;text-align:center}
+.empty{padding:20px;color:var(--dim);font-size:13px;text-align:center}
+
+/* NODURI */
+#nodesView{overflow-y:auto;padding:12px}
+.nodeCard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:10px;cursor:pointer}
+.nodeAv{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#04241b;flex:none}
+.nodeInfo{flex:1;min-width:0}
+.nodeInfo .nm{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nodeInfo .dt{font-size:11px;color:var(--dim);margin-top:2px}
+.nodeStat{text-align:right;font-size:11px;color:var(--dim);flex:none}
+.secTitle{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin:6px 2px 10px}
+
+/* SOS / SETARI */
+#sosView{overflow-y:auto;padding:16px;gap:14px}
+.sosBig{width:100%;padding:26px;border-radius:20px;border:none;background:linear-gradient(135deg,#ff4d5e,#ff7a45);color:#fff;font-size:22px;font-weight:800;letter-spacing:2px;cursor:pointer;box-shadow:0 8px 30px rgba(255,77,94,.35);flex:none}
+.sosBig.armed{background:linear-gradient(135deg,#3ddc84,#2dd4a7);box-shadow:0 8px 30px rgba(61,220,132,.3)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;flex:none}
+.card h3{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;font-size:14px;border-bottom:1px solid rgba(34,51,63,.5)}
+.row:last-child{border-bottom:none}
+.row .v{color:var(--acc);font-variant-numeric:tabular-nums;font-size:13px;text-align:right;word-break:break-word}
+.toggleRow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;font-size:14px}
+.switch{position:relative;width:46px;height:26px;flex:none}
+.switch input{opacity:0;width:0;height:0;position:absolute}
+.slider{position:absolute;inset:0;background:var(--panel2);border:1px solid var(--line);border-radius:20px;cursor:pointer;transition:.2s}
+.slider:before{content:"";position:absolute;width:18px;height:18px;left:3px;top:3px;background:var(--dim);border-radius:50%;transition:.2s}
+.switch input:checked + .slider{background:#134e3f;border-color:var(--acc)}
+.switch input:checked + .slider:before{transform:translateX(20px);background:var(--acc)}
+.switch input:focus-visible + .slider{outline:3px solid #7ab8ff;outline-offset:2px}
+.btn{display:block;width:100%;padding:13px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);font-size:14px;font-weight:600;cursor:pointer;margin-top:8px;text-align:center;text-decoration:none}
+.btn.acc{background:var(--acc);color:#04241b;border:none}
+.btn.warn{background:rgba(255,176,32,.12);border-color:var(--warn);color:var(--warn)}
+.btn.danger{background:rgba(255,77,94,.12);border-color:var(--danger);color:var(--danger)}
+.note{font-size:12px;color:var(--dim);line-height:1.55}
+.note b{color:var(--txt)}
+.txtIn{background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:6px 10px;font-size:13px;width:150px;outline:none}
+.txtIn:focus{border-color:var(--acc)}
+.typeRow{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:13px}
+.typeDot{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex:none}
+
+/* NAV */
+nav{display:flex;background:var(--panel);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
+.navBtn{flex:1;background:none;border:none;color:var(--dim);display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 0;font-size:10.5px;cursor:pointer;border-radius:10px}
+.navBtn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.navBtn.active{color:var(--acc)}
+.badgeN{position:absolute;transform:translate(12px,-6px);background:var(--danger);color:#fff;font-size:9px;font-weight:700;border-radius:9px;padding:1px 5px;display:none}
+
+/* toast, modale */
+#toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%) translateY(20px);background:var(--panel2);border:1px solid var(--acc);color:var(--txt);padding:11px 18px;border-radius:12px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;z-index:60;max-width:88%;text-align:center;white-space:pre-line}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#modal,#menu{position:fixed;inset:0;background:rgba(4,8,12,.75);display:none;align-items:center;justify-content:center;z-index:70;padding:20px;backdrop-filter:blur(3px)}
+#modal.show,#menu.show{display:flex}
+.modalBox{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;max-width:360px;width:100%;max-height:88vh;overflow:auto}
+.modalBox h2{font-size:17px;margin-bottom:8px}
+.modalBox p{font-size:13px;color:var(--dim);line-height:1.5;margin-bottom:14px}
+.modalBox select{width:100%;padding:11px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);font-size:14px;margin-bottom:6px}
+.countRing{text-align:center;font-size:40px;font-weight:800;color:var(--danger);margin:8px 0}
+#menubox button{display:block;width:100%;text-align:left;padding:13px 14px;margin:0 0 8px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);font-size:14px;cursor:pointer}
+#menubox button.cancel{text-align:center;color:var(--dim)}
+.flashOverlay{position:fixed;inset:0;background:#fff;z-index:80;display:none}
+
 /* puncte pe hartă + unde de șoc */
 .pt{position:relative;width:0;height:0}
-.pt .dot{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--c);border:3px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font:700 10px/1 system-ui,sans-serif;font-style:normal;color:#fff}
+.pt .dot{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--c);border:3px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font:700 10px/1 system-ui,sans-serif;font-style:normal;color:#fff;animation:none}
 .pt.sm .dot{left:-7px;top:-7px;width:14px;height:14px}
 .pt .ring{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;border:3px solid var(--c);opacity:0}
 .pt.pulse .ring{animation:wave 2.4s ease-out infinite}
@@ -44,29 +136,164 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
 .pt.pulse .r3{animation-delay:1.6s}
 @keyframes wave{0%{transform:scale(1);opacity:.75}100%{transform:scale(8);opacity:0}}
 .pt .lbl{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);white-space:nowrap;font:700 12px system-ui,sans-serif;color:#fff;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000}
-.pop button{margin:8px 6px 0 0;padding:8px 10px;font-size:13px;border-radius:8px;background:var(--red)}
-.leaflet-control-attribution{font-size:11px}
-@media (prefers-reduced-motion:reduce){.pt.pulse .ring{animation:none;opacity:.35;transform:scale(2.5)}}
+.pop button{margin:8px 6px 0 0;padding:8px 10px;font-size:13px;border-radius:8px;background:var(--danger);border:none;color:#fff;cursor:pointer}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+@media (prefers-reduced-motion:reduce){.pt.pulse .ring{animation:none;opacity:.35;transform:scale(2.5)}.dot{animation:none}}
 </style>
 </head>
 <body>
 <header>
-  <div id="profile" role="button" tabindex="0"></div>
-  <div id="status">Pornesc GPS…</div>
-</header>
-<div id="mapwrap">
-  <div id="map" role="application" aria-label="Hartă"></div>
-  <div class="fab right">
-    <button id="menuBtn">⚙ MENIU</button>
-    <button id="centerBtn">🎯 EU</button>
-    <button id="fitBtn">⤢ TOATE</button>
+  <div class="logo">SOS</div>
+  <div>
+    <h1>SOS Mesh Offline</h1>
+    <div class="sub" id="sub">Comunicații de urgență fără internet</div>
   </div>
-  <div class="fab left">
-    <select id="type" aria-label="Tipul urgenței"></select>
-    <div class="sosrow"><button id="sos" aria-label="Trimite alarma SOS">SOS</button></div>
+  <div class="netbadge"><span class="dot" id="netDot"></span><span id="netTxt">…</span></div>
+</header>
+
+<main>
+  <!-- HARTA -->
+  <section class="view active" id="mapView">
+    <div id="mapWrap">
+      <div id="map" role="application" aria-label="Hartă"></div>
+      <div class="mapHud">
+        <div class="hudChip">📍 <b id="hudPos">—</b></div>
+        <div class="hudChip">🛰️ Noduri în rază: <b id="hudNodes">0</b> · Rază: <b>2 km</b></div>
+        <div class="hudChip" id="statusChip"><span id="status"></span></div>
+      </div>
+      <div class="legend">
+        <span><i class="lg" style="background:#2f7de1"></i>Tu / membru aplicație</span>
+        <span><i class="lg" style="background:#00acc1"></i>Membru web</span>
+        <span><i class="lg" style="background:#e5393b"></i>Alarmă (culoare după tip)</span>
+      </div>
+      <div class="mapBtns">
+        <button class="mbtn" id="btnZoomIn" title="Zoom +" aria-label="Zoom mai mare">＋</button>
+        <button class="mbtn" id="btnZoomOut" title="Zoom −" aria-label="Zoom mai mic">−</button>
+        <button class="mbtn" id="centerBtn" title="Ține harta centrată pe mine" aria-label="Centrează pe mine">◎</button>
+        <button class="mbtn" id="fitBtn" title="Arată tot" aria-label="Arată toate alarmele și membrii">⤢</button>
+      </div>
+      <button class="sosFloat" id="sosQuick">🆘 SOS</button>
+    </div>
+  </section>
+
+  <!-- MESAJE: jurnal de evenimente reale -->
+  <section class="view" id="chatView">
+    <div id="feedList"></div>
+  </section>
+
+  <!-- NODURI -->
+  <section class="view" id="nodesView">
+    <div class="secTitle">Noduri din grupul curent</div>
+    <div id="nodeCards"></div>
+    <div class="card">
+      <h3>Dispozitivul meu</h3>
+      <div class="row"><span>ID nod</span><span class="v" id="myId">—</span></div>
+      <div class="row"><span>Nume</span><span class="v" id="myNameRow">—</span></div>
+      <div class="row"><span>Grup</span><span class="v" id="myGroupRow">—</span></div>
+      <div class="row"><span>Alarme retransmise prin BT (active)</span><span class="v" id="relayed">0</span></div>
+      <div class="row"><span>Înregistrări unice văzute (sesiune)</span><span class="v" id="seenCount">0</span></div>
+    </div>
+  </section>
+
+  <!-- SOS / SETARI -->
+  <section class="view" id="sosView">
+    <button class="sosBig" id="sosMain">🆘 ACTIVEAZĂ SOS</button>
+
+    <div class="card">
+      <h3>Stare GPS</h3>
+      <div class="row"><span>Latitudine</span><span class="v" id="gpsLat">—</span></div>
+      <div class="row"><span>Longitudine</span><span class="v" id="gpsLon">—</span></div>
+      <div class="row"><span>Acuratețe</span><span class="v" id="gpsAcc">—</span></div>
+      <div class="row"><span>Ultima actualizare</span><span class="v" id="gpsTime">—</span></div>
+      <button class="btn acc" id="btnStartGps">Pornește GPS</button>
+      <button class="btn" id="btnSharePos">Distribuie poziția în grup</button>
+    </div>
+
+    <div class="card">
+      <h3>Setări</h3>
+      <div class="toggleRow"><span id="visLabel">Vizibil pe hartă</span>
+        <label class="switch"><input type="checkbox" id="optVisible"><span class="slider"></span></label></div>
+      <div class="toggleRow"><span>Sunet și vibrație la alarmă nouă</span>
+        <label class="switch"><input type="checkbox" id="optSound"><span class="slider"></span></label></div>
+      <div class="row"><span>Poreclă (3-8 litere/cifre)</span><span class="v"><input class="txtIn" id="nameInput" maxlength="8" autocomplete="off" aria-label="Poreclă"></span></div>
+    </div>
+
+    <div class="card">
+      <h3>Grupuri</h3>
+      <div class="row"><span>Grup curent</span><span class="v" id="groupNow">—</span></div>
+      <button class="btn acc" id="btnGlobal">Comunitatea GLOBAL (toți utilizatorii)</button>
+      <button class="btn" id="btnJoin">Intră într-un grup privat (nume + parolă)</button>
+      <button class="btn" id="btnCreate">Creează grup privat (max 3)</button>
+      <button class="btn" id="btnDelOwn">Șterge un grup creat de mine</button>
+      <button class="btn" id="btnLeave">Ieși din grupul curent</button>
+    </div>
+
+    <div class="card">
+      <h3>Alarmă prin SMS</h3>
+      <button class="btn" id="btnCopy">Copiază mesajul SOS</button>
+      <button class="btn" id="btnSms">Trimite SOS prin SMS</button>
+      <button class="btn" id="btnAddSms">Adaugă un SOS primit prin SMS</button>
+    </div>
+
+    <div class="card">
+      <h3>Semnalizare de urgență</h3>
+      <button class="btn warn" id="btnFlash">🔦 Semnal luminos (ecran alb)</button>
+      <button class="btn warn" id="btnSiren">📢 Sirenă de urgență</button>
+      <button class="btn" id="btnMorse">··· --- ··· Semnal SOS Morse</button>
+    </div>
+
+    <div class="card">
+      <h3>Tipuri de urgență</h3>
+      <div id="typeLegend"></div>
+    </div>
+
+    <div class="card">
+      <h3>Admin</h3>
+      <p class="note" id="adminNote">Șterge alarme false sau grupuri, cu codul de admin.</p>
+      <button class="btn danger" id="btnAdmin">Admin</button>
+    </div>
+
+    <div class="card">
+      <h3>📱 Aplicația Android</h3>
+      <p class="note">Pagina web folosește internetul (Firebase). <b>Aplicația Android</b> adaugă mesh-ul <b>Bluetooth fără internet</b>, busola către cea mai apropiată alarmă, lanterna Morse, harta descărcată automat și economia de baterie.</p>
+      <a class="btn acc" href="https://github.com/FAV89/sos-mesh-offline/releases/latest" target="_blank" rel="noopener">Descarcă ultima versiune (APK)</a>
+    </div>
+
+    <div class="card">
+      <h3>Despre</h3>
+      <p class="note">SOS Mesh Offline · pagina web. Alarmele și pozițiile circulă prin Firebase, doar în grupul ales (GLOBAL sau privat, cu parolă). Alarmele expiră după 30 de minute. Poziția ta nu se arată în GLOBAL decât dacă bifezi „Vizibil pe hartă".</p>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button class="navBtn active" data-view="mapView">
+    <svg viewBox="0 0 24 24"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>Hartă</button>
+  <button class="navBtn" data-view="chatView" style="position:relative">
+    <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"/></svg>Mesaje<span class="badgeN" id="chatBadge">0</span></button>
+  <button class="navBtn" data-view="nodesView">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M12 7.5L5 15.5M12 7.5l7 8M7.5 18h9"/></svg>Noduri</button>
+  <button class="navBtn" data-view="sosView">
+    <svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3z"/><path d="M12 10v4M12 17.5v.5"/></svg>SOS</button>
+</nav>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<div id="modal">
+  <div class="modalBox">
+    <h2>Confirmă SOS</h2>
+    <p>Se trimite alerta ta de urgență cu poziția GPS către toți membrii grupului curent. Alege tipul urgenței:</p>
+    <select id="modalType" aria-label="Tipul urgenței"></select>
+    <div class="countRing" id="modalCount">5</div>
+    <button class="btn acc" id="modalOk">Trimite acum</button>
+    <button class="btn" id="modalCancel">Anulează</button>
   </div>
 </div>
-<div id="menu"><div id="menubox"></div></div>
+
+<div id="menu"><div class="modalBox" id="menubox"></div></div>
+<div class="flashOverlay" id="flashOverlay"></div>
+
 <script>
 /* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
@@ -77,7 +304,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
 <script>(function(){
   var DB_URL='https://sos-offline-mash-default-rtdb.europe-west1.firebasedatabase.app';
   var TYPES=['SOS GENERAL','URGENTA MEDICALA','INCENDIU / PERICOL','ACCIDENT','AM NEVOIE DE APA / MANCARE','PIERDUT / DEZORIENTAT'];
-  var MAX_AGE=30*60, PRESENCE_AGE=5*60, MAX_OWNED=3;
+  var MAX_AGE=30*60, PRESENCE_AGE=5*60, MAX_OWNED=3, RANGE_M=2000;
   var $=function(i){return document.getElementById(i)};
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
   function now(){return Math.floor(Date.now()/1000)}
@@ -86,6 +313,13 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   function isNull(x){return x===null||x===undefined}
   function rnd(alpha,n){var s='';for(var i=0;i<n;i++)s+=alpha[Math.floor(Math.random()*alpha.length)];return s}
   function clean(s,n){return (s||'').replace(/[^A-Za-z0-9]/g,'').slice(0,n)}
+  function fmtTime(ms){var d=new Date(ms);return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)}
+  function distM(a,b){
+    var Rr=6371000, dLa=(b.lat-a.lat)*Math.PI/180, dLo=(b.lon-a.lon)*Math.PI/180;
+    var s=Math.pow(Math.sin(dLa/2),2)+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.pow(Math.sin(dLo/2),2);
+    return 2*Rr*Math.asin(Math.sqrt(s));
+  }
+  function fmtDist(m){return m<1000?Math.round(m)+' m':(m/1000).toFixed(2)+' km'}
 
   // ---------- Profil ----------
   var prof=(function(){var p={};try{p=JSON.parse(localStorage.getItem('sos-profile')||'{}')}catch(e){}return p})();
@@ -93,6 +327,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   if(!prof.token) prof.token=rnd('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',24);
   if(prof.presence===undefined) prof.presence=true;
   if(prof.presenceGlobal===undefined) prof.presenceGlobal=false;   // în GLOBAL locația nu se dă străinilor, doar alarmele
+  if(prof.sound===undefined) prof.sound=true;
   if(prof.v!==3){prof.v=3;prof.group='GLOBAL';prof.groupName='GLOBAL'}  // toți încep în comunitatea GLOBAL
   function isGlobal(){return prof.group==='GLOBAL'}
   function shareOn(){return isGlobal()?prof.presenceGlobal:prof.presence}
@@ -102,13 +337,62 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
 
   function cloudOn(){return !!(DB_URL&&prof.group&&prof.group.length>=6)}
   function base(){return R()+'/g/'+prof.group}
-  function status(t){$('status').textContent=t}
-  function renderProfile(){
-    $('profile').textContent=prof.name?('Tu: '+prof.name+'#'+prof.uid+'  •  '+(prof.group?('grup '+(prof.groupName||prof.group)):'fără grup')+'  •  atinge pentru meniu'):'Setează-ți porecla (atinge)';
+
+  // ---------- Mesaje utilizator: toast + jurnal ----------
+  function toast(msg,ms){
+    var t=$('toast'); t.textContent=msg; t.classList.add('show');
+    clearTimeout(t._h); t._h=setTimeout(function(){t.classList.remove('show')},ms||2800);
+  }
+  var FEED_KEY='sosmesh_feed', feed=[], unread=0;
+  try{feed=JSON.parse(localStorage.getItem(FEED_KEY)||'[]')}catch(e){feed=[]}
+  if(!Array.isArray(feed)) feed=[];
+  function renderFeedItem(m){
+    var el=document.createElement('div');
+    if(m.kind==='sos'){ el.className='msg sos'; el.innerHTML='<b>'+esc(m.text)+'</b><div class="meta">'+fmtTime(m.t)+'</div>'; }
+    else { el.className='msg sys'; el.textContent=fmtTime(m.t)+' · '+m.text; }
+    $('feedList').appendChild(el);
+  }
+  function rebuildFeed(){
+    $('feedList').innerHTML='';
+    if(!feed.length){var e=document.createElement('div');e.className='empty';e.id='feedEmpty';e.textContent='Aici apar alarmele primite, răspunsurile „vin spre tine" și evenimentele grupului.';$('feedList').appendChild(e);return}
+    feed.forEach(renderFeedItem);
+    $('feedList').scrollTop=$('feedList').scrollHeight;
+  }
+  function updBadge(){
+    var b=$('chatBadge');
+    b.style.display=unread>0?'inline-block':'none';
+    b.textContent=unread>9?'9+':unread;
+  }
+  function addFeed(kind,text){
+    var m={t:Date.now(),kind:kind,text:text};
+    feed.push(m); if(feed.length>100) feed=feed.slice(-100);
+    try{localStorage.setItem(FEED_KEY,JSON.stringify(feed))}catch(e){}
+    var empty=$('feedEmpty'); if(empty) empty.remove();
+    renderFeedItem(m);
+    var l=$('feedList'); l.scrollTop=l.scrollHeight;
+    if(!$('chatView').classList.contains('active')){unread++;updBadge()}
+  }
+  function status(t){
+    $('status').textContent=t; $('statusChip').style.display='block';
+    toast(t); addFeed('sys',t);
   }
 
-  // ---------- Hartă ----------
-  var map=L.map('map',{zoomControl:true}).setView([47.6567,23.585],14);
+  // ---------- Sunet, vibrație ----------
+  function beep(freq,dur,vol,force){
+    if(!prof.sound&&!force) return;
+    try{
+      var ctx=beep.ctx||(beep.ctx=new (window.AudioContext||window.webkitAudioContext)());
+      var o=ctx.createOscillator(), g=ctx.createGain();
+      o.frequency.value=freq; o.type='sine'; g.gain.value=vol||.15;
+      o.connect(g); g.connect(ctx.destination);
+      o.start(); g.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+dur);
+      o.stop(ctx.currentTime+dur+.02);
+    }catch(e){}
+  }
+  function vib(p){try{if(prof.sound&&navigator.vibrate)navigator.vibrate(p)}catch(e){}}
+
+  // ---------- Hartă (Leaflet, cu dale reale) ----------
+  var map=L.map('map',{zoomControl:false}).setView([47.6567,23.585],14);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,
     attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
   var COLORS={red:'#e5393b',blue:'#2f7de1',cyan:'#00acc1'};
@@ -136,25 +420,48 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   function prune(store,seen){Object.keys(store).forEach(function(k){if(!seen[k]){map.removeLayer(store[k]);delete store[k]}})}
   function clearStore(store){Object.keys(store).forEach(function(k){map.removeLayer(store[k]);delete store[k]})}
 
-  var me=null, sosOn=false, sosId=0, sosType=0, follow=false;
+  var me=null, acc=null, gpsT=null, sosOn=false, sosId=0, sosType=0, follow=false;
   var meM={}, alertM={}, peopleM={}, manualM={};
+  var rangeCircle=null;
 
   function renderMe(){
     if(!me) return;
     upsert(meM,'me',me.lat,me.lon,sosOn?html(TYPE_COLORS[sosType],'Tu: '+(prof.name||''),true,false,TYPE_SYMBOLS[sosType]):html('blue','Tu: '+(prof.name||''),false,false),null);
   }
+  function updRange(){
+    if(!me) return;
+    if(!rangeCircle) rangeCircle=L.circle([me.lat,me.lon],{radius:RANGE_M,color:'#2dd4a7',weight:1.5,dashArray:'6 6',fillColor:'#2dd4a7',fillOpacity:.04,interactive:false}).addTo(map);
+    else rangeCircle.setLatLng([me.lat,me.lon]);
+  }
 
-  if(navigator.geolocation){
-    navigator.geolocation.watchPosition(function(p){
-      var first=!me;
-      me={lat:p.coords.latitude,lon:p.coords.longitude};
-      renderMe();
-      if(first){map.setView([me.lat,me.lon],16);syncPresence(true)}
-      if(follow) map.setView([me.lat,me.lon],map.getZoom(),{animate:false});   // EU activ: harta rămâne centrată pe mine
-      if(!sosOn&&!prof._busy) status('Poziție: '+me.lat.toFixed(5)+', '+me.lon.toFixed(5));
-    },function(){status('Nu am acces la GPS. Pornește locația și permite accesul.')},
-    {enableHighAccuracy:true,maximumAge:5000});
-  } else status('Acest browser nu are GPS.');
+  // ---------- GPS ----------
+  var gpsWatch=null;
+  function updGpsUI(){
+    if(!me){$('hudPos').textContent='—';return}
+    $('gpsLat').textContent=me.lat.toFixed(6)+'°';
+    $('gpsLon').textContent=me.lon.toFixed(6)+'°';
+    $('gpsAcc').textContent=acc?('±'+Math.round(acc)+' m'):'—';
+    $('gpsTime').textContent=gpsT?fmtTime(gpsT):'—';
+    $('hudPos').textContent=me.lat.toFixed(4)+', '+me.lon.toFixed(4)+(acc?' (±'+Math.round(acc)+' m)':'');
+  }
+  function onPos(p){
+    var first=!me;
+    me={lat:p.coords.latitude,lon:p.coords.longitude};
+    acc=p.coords.accuracy; gpsT=Date.now();
+    renderMe(); updGpsUI(); updRange();
+    if(first){map.setView([me.lat,me.lon],16);syncPresence(true);renderNodes()}
+    if(follow) map.setView([me.lat,me.lon],map.getZoom(),{animate:false});   // EU activ: harta rămâne centrată pe mine
+  }
+  function startGps(){
+    if(!navigator.geolocation){toast('Acest browser nu are GPS.');return}
+    if(gpsWatch!==null){toast('GPS deja pornit.');return}
+    toast('Pornesc GPS…');
+    gpsWatch=navigator.geolocation.watchPosition(onPos,function(err){
+      toast('Nu am acces la GPS: '+(err&&err.message||'')+'\nPornește locația și permite accesul.',4000);
+      try{navigator.geolocation.clearWatch(gpsWatch)}catch(e){}
+      gpsWatch=null;
+    },{enableHighAccuracy:true,maximumAge:5000});
+  }
 
   // ---------- Cloud: prezență ----------
   var lastPres=0;
@@ -183,26 +490,50 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
     }).catch(function(){});
   }
 
-  function toggleSos(){
-    if(!me){status('Aștept poziția GPS…');return}
-    if(!sosOn){
-      if(!prof.name&&!askName()){status('Ai nevoie de o poreclă de minim 3 caractere.');return}
-      sosOn=true; sosType=$('type').selectedIndex; sosId=Math.floor(Math.random()*32000)+1;
-      delPresence(); putSos(); renderMe();
-      status('SOS ACTIV #'+sosId+' ('+prof.name+'#'+prof.uid+')'+(cloudOn()?'. Se trimite în grup.':'. Nu ești într-un grup, deci nu se trimite nicăieri (Meniu → Grupuri).'));
-    } else {
-      sosOn=false;
-      if(cloudOn()){var b=base();fetch(b+'/sos/'+sosId+'.json',{method:'DELETE'}).catch(function(){});delResp(b,sosId)}
-      renderMe(); syncPresence(true); status('Alarma oprită.');
-    }
-    $('sos').classList.toggle('on',sosOn);
-    $('sos').textContent=sosOn?'STOP':'SOS';
+  // ---------- SOS: pornire / oprire + confirmare de 5 secunde ----------
+  function updSosUI(){
+    var b=$('sosMain'), q=$('sosQuick');
+    if(sosOn){b.textContent='✅ SOS ACTIV — apasă pentru anulare';b.classList.add('armed');q.textContent='✖ ANULEAZĂ';q.classList.add('armed')}
+    else{b.textContent='🆘 ACTIVEAZĂ SOS';b.classList.remove('armed');q.textContent='🆘 SOS';q.classList.remove('armed')}
   }
-  $('sos').onclick=toggleSos;
+  function startSos(typeIdx){
+    if(!me){toast('Aștept poziția GPS…');return}
+    if(!prof.name&&!askName()){toast('Ai nevoie de o poreclă de minim 3 caractere.');return}
+    sosOn=true; sosType=typeIdx; sosId=Math.floor(Math.random()*32000)+1; lastResp='';
+    prof.lastType=typeIdx; saveProf();
+    delPresence(); putSos(); renderMe(); updSosUI();
+    vib([300,100,300,100,600]); beep(1100,.4,.25);
+    status('SOS ACTIV #'+sosId+' ('+prof.name+'#'+prof.uid+', '+TYPES[typeIdx]+')'+(cloudOn()?'. Se trimite în grup.':'. Nu ești într-un grup, deci nu se trimite nicăieri (fila SOS → Grupuri).'));
+  }
+  function stopSos(){
+    sosOn=false;
+    if(cloudOn()){var b=base();fetch(b+'/sos/'+sosId+'.json',{method:'DELETE'}).catch(function(){});delResp(b,sosId)}
+    renderMe(); updSosUI(); syncPresence(true); lastResp=''; status('Alarma oprită.');
+  }
+  var sosTimer=null;
+  function openSosModal(){
+    if(sosOn){stopSos();return}
+    if(!me){toast('Aștept poziția GPS… pornește GPS din fila SOS.');return}
+    if(!prof.name&&!askName()){toast('Ai nevoie de o poreclă de minim 3 caractere.');return}
+    $('modalType').selectedIndex=prof.lastType||0;
+    $('modal').classList.add('show');
+    var c=5; $('modalCount').textContent=c;
+    clearInterval(sosTimer);
+    sosTimer=setInterval(function(){c--;$('modalCount').textContent=c;if(c<=0)confirmSos()},1000);
+  }
+  function closeModal(){clearInterval(sosTimer);$('modal').classList.remove('show')}
+  function confirmSos(){var t=$('modalType').selectedIndex;closeModal();startSos(t)}
+  $('sosMain').onclick=openSosModal;
+  $('sosQuick').onclick=openSosModal;
+  $('modalOk').onclick=confirmSos;
+  $('modalCancel').onclick=closeModal;
 
   function sosText(){return me?('SOS #'+(sosId||'?')+' '+me.lat.toFixed(5)+','+me.lon.toFixed(5)):null}
 
   // ---------- Cloud: citire ----------
+  var cloudOk=null, firstPoll=true, knownAlerts={}, lastResp='', cloudNodes=[], seenIds={}, seenCount=0;
+  function noteSeen(id){if(!seenIds[id]){seenIds[id]=1;seenCount++}}
+
   function respond(id){
     if(!cloudOn()||!prof.name){window.alert('Ai nevoie de poreclă și de un grup.');return}
     fetch(base()+'/resp/'+id+'/'+prof.uid+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},
@@ -220,10 +551,21 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
     if(adminCode){var d=document.createElement('button');d.textContent='ȘTERGE (admin)';d.onclick=function(){adminDelAlert(a.sosId)};box.appendChild(d)}
     return box;
   }
+  function announceAlert(a){
+    var label=a.name?a.name+'#'+(a.uid||''):'Necunoscut';
+    var d=me?(' · '+fmtDist(distM(me,{lat:a.lat,lon:a.lon}))):'';
+    addFeed('sos','🆘 SOS de la '+label+' · '+a.type+d+(a.hops>0?' · '+a.hops+' salturi BT':''));
+    beep(1200,.3,.25); vib([200,100,200,100,400]);
+    toast('🆘 Alertă SOS de la '+label,4000);
+  }
 
+  function resetCloudView(){
+    knownAlerts={}; firstPoll=true; lastResp=''; cloudNodes=[];
+    clearStore(alertM); clearStore(peopleM); renderNodes();
+  }
   function leaveGroup(){
-    delPresence(); prof.group=''; saveProf();
-    clearStore(alertM); clearStore(peopleM); renderProfile();
+    delPresence(); prof.group=''; prof.groupName=''; saveProf();
+    resetCloudView(); renderProfile(); updNet();
   }
 
   function poll(){
@@ -236,9 +578,10 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
     if(sosOn) reqs.push(fetch(b+'/resp/'+sosId+'.json').then(function(r){return r.json()}));
     Promise.all(reqs).then(function(res){
       if(g!==prof.group) return;
+      cloudOk=true; updNet();
       if(!isNull(res[3])){switchGroup('GLOBAL','GLOBAL');status('Grupul a fost șters. Ai revenit în comunitatea GLOBAL.');return}
       var sos=res[0]||{}, pres=res[1]||{}, clearAt=(typeof res[2]==='number')?res[2]:0;
-      var t=now(), seen={}, n=0, alertUids={}, liveAlerts=[];
+      var t=now(), seen={}, n=0, alertUids={}, liveAlerts=[], liveIds={}, nodes=[];
       Object.keys(sos).forEach(function(k){
         var a=sos[k];
         if(!a||typeof a.lat!=='number'||typeof a.lon!=='number'||typeof a.timestamp!=='number') return;
@@ -246,12 +589,17 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
         if(a.uid) alertUids[a.uid]=1;
         liveAlerts.push(a);
         if(sosOn&&String(k)===String(sosId)) return;
-        n++; seen[k]=1;
+        n++; seen[k]=1; liveIds[k]=1; noteSeen('a'+k);
         var ti=tIdx(a.type);
         var m=upsert(alertM,k,a.lat,a.lon,html(TYPE_COLORS[ti],a.name?a.name+'#'+(a.uid||''):'SOS',true,false,TYPE_SYMBOLS[ti]),alertPopup);
         m._a=a;
+        nodes.push({kind:'alarm',id:k,name:a.name||'SOS',uid:a.uid||'',lat:a.lat,lon:a.lon,ts:a.timestamp,type:a.type,hops:a.hops||0,color:TYPE_COLORS[ti]});
+        if(!knownAlerts[k]){knownAlerts[k]=1;if(!firstPoll) announceAlert(a)}
       });
       prune(alertM,seen);
+      Object.keys(knownAlerts).forEach(function(k){
+        if(!liveIds[k]){delete knownAlerts[k];if(!firstPoll) addFeed('sys','Alarma #'+k+' a încetat.')}
+      });
       var seenP={};
       Object.keys(pres).forEach(function(k){
         var p=pres[k];
@@ -259,35 +607,101 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
         if(k===prof.uid||alertUids[k]||t-p.timestamp>PRESENCE_AGE) return;   // cine are alarmă apare doar ca punct de alarmă
         var dup=liveAlerts.some(function(a){return (a.name||'').toLowerCase()===(p.name||'').toLowerCase()&&Math.abs(a.lat-p.lat)<0.003&&Math.abs(a.lon-p.lon)<0.004});
         if(dup) return;   // același nume lângă o alarmă (ex. ID schimbat după reinstalare)
-        seenP[k]=1;
+        seenP[k]=1; noteSeen('p'+k);
         upsert(peopleM,k,p.lat,p.lon,html(p.src==='web'?'cyan':'blue',p.name||'',false,true),function(){return esc(p.name||'')+'#'+esc(k)+' ('+(p.src==='web'?'web':'aplicație')+')'});
+        nodes.push({kind:'member',id:k,name:p.name||'?',uid:k,lat:p.lat,lon:p.lon,ts:p.timestamp,src:p.src==='web'?'web':'aplicație',color:p.src==='web'?COLORS.cyan:COLORS.blue});
       });
       prune(peopleM,seenP);
+      cloudNodes=nodes;
+      if(firstPoll){firstPoll=false;if(n) addFeed('sys',n+(n===1?' alarmă activă':' alarme active')+' în grupul '+(prof.groupName||prof.group)+'.')}
       if(sosOn){
         var r=res[4]||{}, names=Object.keys(r).map(function(k){return (r[k]&&r[k].name||'')+'#'+k});
-        if(names.length) status('SOS ACTIV #'+sosId+'\nAJUTOR ÎN DRUM: '+names.join(', '));
-      } else if(n) status('Alarme active: '+n);
-    }).catch(function(){});
+        var key=names.join(',');
+        if(key!==lastResp){
+          lastResp=key;
+          if(names.length){addFeed('sos','AJUTOR ÎN DRUM: '+names.join(', '));toast('AJUTOR ÎN DRUM: '+names.join(', '),4000);beep(900,.25,.2);vib([150,80,150])}
+        }
+      }
+      renderNodes();
+    }).catch(function(){cloudOk=false;updNet()});
   }
   poll(); setInterval(poll,15000);
 
+  // ---------- Noduri (date reale din cloud + alarme adăugate din SMS) ----------
+  function allNodes(){
+    var l=cloudNodes.slice();
+    loadM().forEach(function(a){
+      l.push({kind:'manual',id:'m'+a.id,name:'SMS #'+a.id,uid:'',lat:a.lat,lon:a.lon,ts:Math.floor((a.ts||Date.now())/1000),color:'#e5393b'});
+    });
+    return l;
+  }
+  function renderNodes(){
+    var list=allNodes();
+    if(me) list.forEach(function(n){n.d=distM(me,{lat:n.lat,lon:n.lon})});
+    list.sort(function(a,b){return (a.d==null?1e12:a.d)-(b.d==null?1e12:b.d)});
+    var inRange=me?list.filter(function(n){return n.d<RANGE_M}).length:list.length;
+    $('hudNodes').textContent=inRange;
+    var relayed=cloudNodes.filter(function(n){return n.kind==='alarm'&&n.hops>0}).length;
+    $('relayed').textContent=relayed;
+    $('seenCount').textContent=seenCount;
+    $('myId').textContent=prof.name?(prof.name+'#'+prof.uid):prof.uid;
+    $('myNameRow').textContent=prof.name||'—';
+    $('myGroupRow').textContent=prof.group?(prof.groupName||prof.group):'fără grup';
+    var wrap=$('nodeCards'); wrap.innerHTML='';
+    if(!list.length){
+      var p=document.createElement('p'); p.className='note'; p.style.padding='8px';
+      p.textContent=cloudOn()?'Niciun nod în acest grup deocamdată. Apar aici membrii vizibili și alarmele active.':'Nu ești într-un grup. Alege un grup din fila SOS ca să vezi nodurile.';
+      wrap.appendChild(p);
+    }
+    list.forEach(function(n){
+      var age=Math.max(0,Math.floor((now()-n.ts)/60));
+      var card=document.createElement('div'); card.className='nodeCard';
+      var line=[];
+      if(n.uid) line.push(esc(n.uid));
+      if(n.d!=null) line.push(fmtDist(n.d));
+      if(n.kind==='alarm') line.push('salturi BT: '+n.hops);
+      if(n.kind==='member') line.push(esc(n.src));
+      var title=n.kind==='alarm'?esc(n.type):(n.kind==='manual'?'alarmă adăugată din SMS':'membru');
+      card.innerHTML=
+        '<div class="nodeAv" style="background:'+n.color+'">'+esc((n.name||'?').charAt(0).toUpperCase())+'</div>'+
+        '<div class="nodeInfo"><div class="nm">'+esc(n.name)+(n.kind!=='member'?' 🆘':'')+'</div>'+
+        '<div class="dt">'+title+'</div><div class="dt">'+line.join(' · ')+'</div></div>'+
+        '<div class="nodeStat">'+(age<1?'acum':'acum '+age+' min')+'</div>';
+      card.onclick=function(){showView('mapView');map.setView([n.lat,n.lon],17)};
+      wrap.appendChild(card);
+    });
+  }
+
   // ---------- Butoane hartă ----------
-  function updateFollowUi(){$('centerBtn').textContent=follow?'🎯 EU ✓':'🎯 EU';$('centerBtn').classList.toggle('on',follow)}
+  function updateFollowUi(){$('centerBtn').classList.toggle('on',follow);$('centerBtn').setAttribute('aria-pressed',follow?'true':'false')}
   $('centerBtn').onclick=function(){
-    if(!me){status('Aștept poziția GPS…');return}
+    if(!me){toast('Aștept poziția GPS…');return}
     follow=!follow; updateFollowUi();
+    toast(follow?'Harta rămâne centrată pe tine. Apasă din nou ca să o eliberezi.':'Harta e liberă.');
     if(follow) map.setView([me.lat,me.lon],map.getZoom()<16?18:map.getZoom(),{animate:true});
   };
   $('fitBtn').onclick=function(){
     follow=false; updateFollowUi();
     var pts=[];
     if(me) pts.push([me.lat,me.lon]);
-    [alertM,peopleM].forEach(function(s){Object.keys(s).forEach(function(k){pts.push(s[k].getLatLng())})});
+    [alertM,peopleM,manualM].forEach(function(s){Object.keys(s).forEach(function(k){pts.push(s[k].getLatLng())})});
     if(pts.length>1) map.fitBounds(pts,{padding:[50,50],maxZoom:17});
     else if(pts.length===1) map.setView(pts[0],16);
   };
+  $('btnZoomIn').onclick=function(){map.zoomIn()};
+  $('btnZoomOut').onclick=function(){map.zoomOut()};
 
-  // ---------- Meniu (modal) ----------
+  // ---------- Navigare ----------
+  function showView(id){
+    document.querySelectorAll('.navBtn').forEach(function(x){x.classList.toggle('active',x.getAttribute('data-view')===id)});
+    document.querySelectorAll('.view').forEach(function(x){x.classList.toggle('active',x.id===id)});
+    if(id==='chatView'){unread=0;updBadge();var l=$('feedList');l.scrollTop=l.scrollHeight}
+    if(id==='mapView') setTimeout(function(){map.invalidateSize()},50);
+    if(id==='nodesView') renderNodes();
+  }
+  document.querySelectorAll('.navBtn').forEach(function(b){b.onclick=function(){showView(b.getAttribute('data-view'))}});
+
+  // ---------- Meniu modal (sub-liste) ----------
   function openMenu(title,items){
     var box=$('menubox'); box.innerHTML='<h2>'+esc(title)+'</h2>';
     items.forEach(function(it){
@@ -299,32 +713,11 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   }
   function closeMenu(){$('menu').classList.remove('show')}
   $('menu').onclick=function(e){if(e.target===this)closeMenu()};
-  $('menuBtn').onclick=mainMenu;
-  $('profile').onclick=mainMenu;
 
   function askName(){
     var n=clean(window.prompt('Poreclă (3-8 litere/cifre, fără diacritice):',prof.name||''),8);
     if(n.length>=3){prof.name=n;saveProf();renderProfile();renderMe();return true}
     return false;
-  }
-
-  function mainMenu(){
-    openMenu('Meniu',[
-      {label:'Schimbă porecla ('+(prof.name||'-')+')',fn:askName},
-      {label:'Grupuri',fn:groupsMenu},
-      {label:'Vizibil pe hartă în '+(isGlobal()?'GLOBAL':'acest grup')+': '+(shareOn()?'DA':'NU'),fn:function(){
-        var v=!shareOn(); if(isGlobal()) prof.presenceGlobal=v; else prof.presence=v;
-        saveProf(); if(!v) delPresence(); else syncPresence(true);
-        status(v?'Ceilalți din grup te văd pe hartă.':'Nu mai ești vizibil pe hartă. Alarmele tale rămân vizibile.')}},
-      {label:'Copiază mesajul SOS',fn:function(){
-        var t=sosText(); if(!t){status('Aștept poziția GPS…');return}
-        (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){status('Copiat: '+t)},function(){window.prompt('Copiază mesajul:',t)})}},
-      {label:'Trimite SOS prin SMS',fn:function(){
-        var t=sosText(); if(!t){status('Aștept poziția GPS…');return}
-        location.href='sms:?body='+encodeURIComponent(t+' https://www.openstreetmap.org/?mlat='+me.lat+'&mlon='+me.lon)}},
-      {label:'Adaugă un SOS primit prin SMS',fn:addManual},
-      {label:adminCode?'Admin (activ)':'Admin',fn:adminMenu}
-    ]);
   }
 
   // ---------- Grupuri ----------
@@ -335,7 +728,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   }
   function switchGroup(gid,name){
     delPresence(); prof.group=gid; prof.groupName=name; saveProf();
-    clearStore(alertM); clearStore(peopleM); renderProfile(); poll(); syncPresence(true);
+    resetCloudView(); renderProfile(); updNet(); poll(); syncPresence(true);
   }
   // identificator secret = SHA-256(nume + ":" + parolă), primele 20 de caractere (ca în aplicație)
   function groupId(name,pass){
@@ -351,17 +744,13 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
     if(!pass||pass.length<6){window.alert('Parola are minim 6 caractere.');return null}
     return {name:name,pass:pass};
   }
-  function groupsMenu(){
-    openMenu('Grupuri',[
-      {label:prof.group?('Grup curent: '+(prof.groupName||prof.group)):'Fără grup'},
-      {label:'Comunitatea GLOBAL (toți utilizatorii)',fn:function(){switchGroup('GLOBAL','GLOBAL');status('Ești în comunitatea GLOBAL. Aici se văd alarmele tuturor.')}},
-      {label:'Intră într-un grup privat (nume + parolă)',fn:joinGroup},
-      {label:'Creează grup privat (max '+MAX_OWNED+')',fn:createGroup},
-      {label:'Șterge un grup creat de mine',fn:deleteOwn},
-      {label:'Ieși din grupul curent',fn:function(){leaveGroup();status('Ai ieșit din grup.')}}
-    ]);
+  function needCrypto(){
+    if(window.crypto&&window.crypto.subtle) return true;
+    window.alert('Acest browser nu permite grupurile private aici (are nevoie de o conexiune https). Deschide pagina de pe adresa https://fav89.github.io/sos-mesh-offline/');
+    return false;
   }
   function joinGroup(){
+    if(!needCrypto()) return;
     var np=askNamePass(); if(!np) return;
     groupId(np.name,np.pass).then(function(gid){
       return Promise.all([fetch(R()+'/meta/'+gid+'/created.json').then(function(r){return r.json()}),
@@ -373,6 +762,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
     }).catch(function(){window.alert('Nu am putut verifica (fără internet?).')});
   }
   function createGroup(){
+    if(!needCrypto()) return;
     listOwned().then(function(owned){
       if(owned.length>=MAX_OWNED){window.alert('Ai deja '+MAX_OWNED+' grupuri create. Șterge unul ca să creezi altul.');return}
       var np=askNamePass(); if(!np) return;
@@ -424,11 +814,15 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
   }
 
   // ---------- Admin ----------
+  function updAdminUi(){
+    $('btnAdmin').textContent=adminCode?'Admin (activ)':'Admin';
+    $('adminNote').textContent=adminCode?'Mod admin activ în această sesiune. Pe alarme apare „ȘTERGE (admin)".':'Șterge alarme false sau grupuri, cu codul de admin.';
+  }
   function adminMenu(){
     if(!adminCode){
       var c=window.prompt('Cod admin:'); if(!c) return;
       fetch(R()+'/adminCheck/'+encodeURIComponent(c)+'.json').then(function(r){
-        if(ok(r)){adminCode=c;status('Mod admin activ.');adminMenu()}
+        if(ok(r)){adminCode=c;updAdminUi();status('Mod admin activ.');adminMenu()}
         else if(r.status===401||r.status===403) window.alert('Refuzat (HTTP '+r.status+'): codul nu coincide cu /config/adminCode din Firebase, sau regulile nu sunt publicate.');
         else window.alert('Eroare Firebase (HTTP '+r.status+').');
       }).catch(function(){window.alert('Nu am putut verifica (fără internet?).')});
@@ -455,7 +849,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
           status('Grupul '+code+' a fost șters.');
         }).catch(function(){window.alert('Eroare de rețea.')});
       }},
-      {label:'Ieși din modul admin',fn:function(){adminCode=null;status('Ai ieșit din modul admin.')}}
+      {label:'Ieși din modul admin',fn:function(){adminCode=null;updAdminUi();status('Ai ieșit din modul admin.')}}
     ]);
   }
 
@@ -486,6 +880,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
       var m=upsert(manualM,a.id,a.lat,a.lon,html('red','SOS #'+a.id,true,false,'!'),manualPopup); m._a=a;
     });
     prune(manualM,seen);
+    renderNodes();
   }
   setInterval(showManual,60000);   // dispar singure după 30 de minute
   function addManual(){
@@ -495,13 +890,116 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
     var id=m[1],lat=parseFloat(m[2]),lon=parseFloat(m[3]);
     if(Math.abs(lat)>90||Math.abs(lon)>180){window.alert('Coordonate invalide.');return}
     var l=loadM().filter(function(a){return String(a.id)!==String(id)}); l.push({id:id,lat:lat,lon:lon,ts:Date.now()});
-    saveM(l); showManual(); map.setView([lat,lon],16);
+    saveM(l); showManual(); showView('mapView'); map.setView([lat,lon],16);
+    addFeed('sos','🆘 Alarmă adăugată din SMS: #'+id+' · '+lat.toFixed(5)+', '+lon.toFixed(5));
   }
 
-  // ---------- pornire ----------
-  TYPES.forEach(function(t){var o=document.createElement('option');o.textContent=t;$('type').appendChild(o)});
-  renderProfile(); showManual(); updateFollowUi();
+  // ---------- Legături pentru fila SOS / Setări ----------
+  $('btnStartGps').onclick=startGps;
+  $('btnSharePos').onclick=function(){
+    if(!cloudOn()){toast('Intră întâi într-un grup (fila SOS → Grupuri).');return}
+    if(!me){toast('Aștept poziția GPS…');return}
+    if(!shareOn()){toast('Ești invizibil în acest grup. Bifează „Vizibil pe hartă" ca să-ți distribui poziția.');return}
+    if(!prof.name&&!askName()) return;
+    syncPresence(true); toast('Poziție distribuită în grup ✔');
+  };
+  $('btnGlobal').onclick=function(){switchGroup('GLOBAL','GLOBAL');status('Ești în comunitatea GLOBAL. Aici se văd alarmele tuturor.')};
+  $('btnJoin').onclick=joinGroup;
+  $('btnCreate').onclick=createGroup;
+  $('btnDelOwn').onclick=deleteOwn;
+  $('btnLeave').onclick=function(){leaveGroup();status('Ai ieșit din grup.')};
+  $('btnCopy').onclick=function(){
+    var t=sosText(); if(!t){toast('Aștept poziția GPS…');return}
+    (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){status('Copiat: '+t)},function(){window.prompt('Copiază mesajul:',t)});
+  };
+  $('btnSms').onclick=function(){
+    var t=sosText(); if(!t){toast('Aștept poziția GPS…');return}
+    location.href='sms:?body='+encodeURIComponent(t+' https://www.openstreetmap.org/?mlat='+me.lat+'&mlon='+me.lon);
+  };
+  $('btnAddSms').onclick=addManual;
+  $('btnAdmin').onclick=adminMenu;
+
+  $('optVisible').onchange=function(){
+    var v=this.checked; if(isGlobal()) prof.presenceGlobal=v; else prof.presence=v;
+    saveProf(); if(!v) delPresence(); else syncPresence(true);
+    toast(v?'Ceilalți din grup te văd pe hartă.':'Nu mai ești vizibil pe hartă. Alarmele tale rămân vizibile.');
+  };
+  $('optSound').onchange=function(){prof.sound=this.checked;saveProf();toast(this.checked?'Sunet activat ✔':'Sunet dezactivat')};
+  $('nameInput').onchange=function(){
+    var n=clean(this.value,8);
+    if(n.length>=3){prof.name=n;saveProf();renderProfile();renderMe();renderNodes();toast('Poreclă actualizată: '+n)}
+    else{toast('Poreclă invalidă: minim 3 litere/cifre, fără diacritice.')}
+    this.value=prof.name||'';
+  };
+
+  // ---------- Semnalizare de urgență (ecran alb, sirenă, Morse) ----------
+  var flashOn=false;
+  $('btnFlash').onclick=function(){
+    flashOn=!flashOn;
+    $('flashOverlay').style.display=flashOn?'block':'none';
+    if(flashOn) toast('Atinge ecranul pentru a opri semnalul luminos.',3000);
+  };
+  $('flashOverlay').onclick=function(){flashOn=false;$('flashOverlay').style.display='none'};
+  var siren=null;
+  $('btnSiren').onclick=function(){
+    if(siren){clearInterval(siren);siren=null;toast('Sirenă oprită.');return}
+    var hi=true;
+    siren=setInterval(function(){beep(hi?980:640,.35,.3,true);hi=!hi},380);
+    toast('Sirenă pornită — apasă din nou pentru oprire.',3000);
+  };
+  var morseBusy=false;
+  function wait(ms){return new Promise(function(r){setTimeout(r,ms)})}
+  $('btnMorse').onclick=async function(){
+    if(morseBusy) return; morseBusy=true;
+    toast('Transmit SOS în Morse: ··· --- ···');
+    var unit=140, seq=[[1,1,1],[3,3,3],[1,1,1]];
+    for(var g=0;g<seq.length;g++){
+      for(var i=0;i<seq[g].length;i++){
+        var d=seq[g][i];
+        beep(900,unit*d/1000,.25,true);
+        if(!flashOn) $('flashOverlay').style.display='block';      // și lumină, ca să se vadă fără sunet
+        await wait(unit*d);
+        if(!flashOn) $('flashOverlay').style.display='none';
+        await wait(unit);
+      }
+      await wait(unit*2);
+    }
+    morseBusy=false;
+  };
+
+  // ---------- Stare rețea, profil ----------
+  function updNet(){
+    var on=navigator.onLine, cls='dot', txt;
+    if(!on){cls+=' off';txt='OFFLINE'}
+    else if(!cloudOn()){txt='ONLINE · FĂRĂ GRUP'}
+    else if(cloudOk===false){cls+=' off';txt='CLOUD INDISPONIBIL'}
+    else{txt='CLOUD · '+(prof.groupName||prof.group)}
+    $('netDot').className=cls; $('netTxt').textContent=txt;
+  }
+  window.addEventListener('online',updNet); window.addEventListener('offline',updNet);
+
+  function renderProfile(){
+    $('sub').textContent=prof.name?(prof.name+'#'+prof.uid+' · '+(prof.group?('grup '+(prof.groupName||prof.group)):'fără grup')):'Setează-ți porecla în fila SOS';
+    $('groupNow').textContent=prof.group?(prof.groupName||prof.group):'fără grup';
+    $('visLabel').textContent='Vizibil pe hartă în '+(isGlobal()?'GLOBAL':'acest grup');
+    $('optVisible').checked=!!shareOn();
+    $('optSound').checked=!!prof.sound;
+    $('nameInput').value=prof.name||'';
+    renderNodes();
+  }
+
+  // ---------- Pornire ----------
+  TYPES.forEach(function(t,i){
+    var o=document.createElement('option'); o.textContent=t; $('modalType').appendChild(o);
+    var row=document.createElement('div'); row.className='typeRow';
+    row.innerHTML='<span class="typeDot" style="background:'+TYPE_COLORS[i]+(i===3?';color:#000':'')+'">'+esc(TYPE_SYMBOLS[i])+'</span><span>'+esc(t)+'</span>';
+    $('typeLegend').appendChild(row);
+  });
+  rebuildFeed(); updBadge(); updSosUI(); updAdminUi(); updateFollowUi();
+  renderProfile(); showManual(); updNet(); updGpsUI();
+  startGps();
   if(!prof.name){setTimeout(function(){askName()},400)}
+  setTimeout(function(){map.invalidateSize()},200);
 })();
 </script>
 <script>
