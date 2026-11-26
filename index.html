@@ -51,6 +51,10 @@ main{flex:1;position:relative;overflow:hidden}
 .mbtn.on{background:#134e3f;border-color:var(--acc);color:var(--acc)}
 .sosFloat{position:absolute;left:12px;bottom:34px;z-index:1000;background:linear-gradient(135deg,#ff4d5e,#ff7a45);border:none;color:#fff;font-weight:800;font-size:15px;padding:14px 22px;border-radius:16px;cursor:pointer;box-shadow:0 6px 22px rgba(255,77,94,.4);letter-spacing:1px}
 .sosFloat:active{transform:scale(.96)}
+.typeQuick{position:absolute;left:12px;bottom:92px;z-index:1000;width:200px;max-width:calc(100% - 90px);height:38px;border:none;border-radius:10px;padding:0 8px;background:rgba(255,255,255,.95);color:#111;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.typeQuick:disabled,.typeSel:disabled{opacity:.6}
+.typeSel{width:100%;padding:11px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);font-size:14px}
+.typeShow{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px;font-size:14px;font-weight:700;text-align:center;color:var(--warn);margin-bottom:6px}
 .sosFloat.armed{background:linear-gradient(135deg,#3ddc84,#2dd4a7);box-shadow:0 6px 22px rgba(61,220,132,.35)}
 .leaflet-container{font:inherit;background:transparent}
 .leaflet-control-attribution{font-size:10px;background:rgba(16,24,32,.8)!important;color:var(--dim)!important}
@@ -173,6 +177,7 @@ nav{display:flex;background:var(--panel);border-top:1px solid var(--line);paddin
         <button class="mbtn" id="centerBtn" title="Ține harta centrată pe mine" aria-label="Centrează pe mine">◎</button>
         <button class="mbtn" id="fitBtn" title="Arată tot" aria-label="Arată toate alarmele și membrii">⤢</button>
       </div>
+      <select class="typeQuick" id="quickType" aria-label="Tipul urgenței (se trimite cu butonul SOS)"></select>
       <button class="sosFloat" id="sosQuick">🆘 SOS</button>
     </div>
   </section>
@@ -198,6 +203,10 @@ nav{display:flex;background:var(--panel);border-top:1px solid var(--line);paddin
 
   <!-- SOS / SETARI -->
   <section class="view" id="sosView">
+    <div class="card">
+      <h3>Tipul urgenței</h3>
+      <select class="typeSel" id="mainType" aria-label="Tipul urgenței (se trimite cu butonul SOS)"></select>
+    </div>
     <button class="sosBig" id="sosMain">🆘 ACTIVEAZĂ SOS</button>
 
     <div class="card">
@@ -283,8 +292,8 @@ nav{display:flex;background:var(--panel);border-top:1px solid var(--line);paddin
 <div id="modal">
   <div class="modalBox">
     <h2>Confirmă SOS</h2>
-    <p>Se trimite alerta ta de urgență cu poziția GPS către toți membrii grupului curent. Alege tipul urgenței:</p>
-    <select id="modalType" aria-label="Tipul urgenței"></select>
+    <p>Se trimite alerta ta de urgență cu poziția GPS către toți membrii grupului curent.</p>
+    <div class="typeShow" id="modalTypeName"></div>
     <div class="countRing" id="modalCount">5</div>
     <button class="btn acc" id="modalOk">Trimite acum</button>
     <button class="btn" id="modalCancel">Anulează</button>
@@ -491,7 +500,17 @@ nav{display:flex;background:var(--panel);border-top:1px solid var(--line);paddin
   }
 
   // ---------- SOS: pornire / oprire + confirmare de 5 secunde ----------
+  // Tipul urgenței: vizibil mereu (lângă butonul SOS de pe hartă și în fila SOS), sincronizat între cele două
+  function setType(i){
+    $('quickType').selectedIndex=i; $('mainType').selectedIndex=i;
+    prof.lastType=i; saveProf();
+  }
+  function currentType(){return $('quickType').selectedIndex}
+  $('quickType').onchange=function(){setType(this.selectedIndex)};
+  $('mainType').onchange=function(){setType(this.selectedIndex)};
+
   function updSosUI(){
+    $('quickType').disabled=sosOn; $('mainType').disabled=sosOn;   // cât timp alarma e activă, tipul ei nu se schimbă
     var b=$('sosMain'), q=$('sosQuick');
     if(sosOn){b.textContent='✅ SOS ACTIV — apasă pentru anulare';b.classList.add('armed');q.textContent='✖ ANULEAZĂ';q.classList.add('armed')}
     else{b.textContent='🆘 ACTIVEAZĂ SOS';b.classList.remove('armed');q.textContent='🆘 SOS';q.classList.remove('armed')}
@@ -515,14 +534,14 @@ nav{display:flex;background:var(--panel);border-top:1px solid var(--line);paddin
     if(sosOn){stopSos();return}
     if(!me){toast('Aștept poziția GPS… pornește GPS din fila SOS.');return}
     if(!prof.name&&!askName()){toast('Ai nevoie de o poreclă de minim 3 caractere.');return}
-    $('modalType').selectedIndex=prof.lastType||0;
+    $('modalTypeName').textContent=TYPES[currentType()];
     $('modal').classList.add('show');
     var c=5; $('modalCount').textContent=c;
     clearInterval(sosTimer);
     sosTimer=setInterval(function(){c--;$('modalCount').textContent=c;if(c<=0)confirmSos()},1000);
   }
   function closeModal(){clearInterval(sosTimer);$('modal').classList.remove('show')}
-  function confirmSos(){var t=$('modalType').selectedIndex;closeModal();startSos(t)}
+  function confirmSos(){var t=currentType();closeModal();startSos(t)}
   $('sosMain').onclick=openSosModal;
   $('sosQuick').onclick=openSosModal;
   $('modalOk').onclick=confirmSos;
@@ -990,11 +1009,13 @@ nav{display:flex;background:var(--panel);border-top:1px solid var(--line);paddin
 
   // ---------- Pornire ----------
   TYPES.forEach(function(t,i){
-    var o=document.createElement('option'); o.textContent=t; $('modalType').appendChild(o);
+    var o=document.createElement('option'); o.textContent=t; $('quickType').appendChild(o);
+    var o2=document.createElement('option'); o2.textContent=t; $('mainType').appendChild(o2);
     var row=document.createElement('div'); row.className='typeRow';
     row.innerHTML='<span class="typeDot" style="background:'+TYPE_COLORS[i]+(i===3?';color:#000':'')+'">'+esc(TYPE_SYMBOLS[i])+'</span><span>'+esc(t)+'</span>';
     $('typeLegend').appendChild(row);
   });
+  setType(Math.min(Math.max(prof.lastType||0,0),TYPES.length-1));
   rebuildFeed(); updBadge(); updSosUI(); updAdminUi(); updateFollowUi();
   renderProfile(); showManual(); updNet(); updGpsUI();
   startGps();
